@@ -1,0 +1,193 @@
+# -*- mode:org; fill-column:79; -*-
+#+title: CSV-SQLite3 Using Node
+#+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
+#+subtitle:{{{date}}} {{{version}}}
+#+date:2019-07-07 12:45
+#+macro: version Version 0.0.1
+
+* Introduction
+:PROPERTIES:
+:unnumbered: t
+:END:
+US Bank has the facility to download bank records in CSV form.  This program is
+designed to convert those downloaded CSV files into a form usable by SQLite,
+and then to use SQLite to process the data.
+
+{{{heading(Header Lines)}}}
+
+The header lines are:
+
+: "Date","Transaction","Name","Memo","Amount"
+
+{{{heading(Data Columns)}}}
+
+{{{subheading(Date)}}}
+
+A sample date is:
+
+: 1/4/2016
+
+{{{subheading(Transaction)}}}
+
+A =Transaction= is one of
+
+- =DEBIT=
+- =CREDIT=
+
+{{{subheading(Name)}}}
+
+A sample =name= entry is:
+
+: DEBIT PURCHASE -VISA USPS PO BOXES 66800-3447779 DC
+
+{{{subheading(Memo)}}}
+
+A sample =memo= entry is:
+
+: Download from usbank.com. USPS PO BOXES 66800-3447779 DC
+
+{{{subheading(Amount)}}}
+
+- -66.0000
+
+* Create the Project
+This project uses and installs at this point the following modules:
+
+- ~command-line-args~
+- ~command-line-usage~
+- ~csv~
+- ~sqlite3~
+
+#+name:tangle-CSV-SQLite3-project
+#+begin_src emacs-lisp :results output :exports results
+(org-babel-tangle-file "CSV-SQLite3.org")
+#+end_src
+
+#+name:create-CSV-SQLite3-project
+#+header: :exports results :results output
+#+begin_src sh
+yarn --yes init
+yarn add command-line-args command-line-usage csv sqlite3
+#+end_src
+
+** Command Line Argument Processing
+#+cindex:command-line arguments
+#+cindex:arguments
+#+cindex:@command{command-line-arguments}
+#+cindex:@option{--help}
+#+cindex:@option{--create}
+#+cindex:@option{--delete}
+Initially, the database should be creatable and deleteable.
+
+: csvsqlite --help | -h
+
+: csvsqlite --create=<db-name> | -c <db-name>
+
+: csvsqlite --delete=<db-name> | -d <db-name>
+
+#+name:CSV-SQLite3-command-line-arg-processing
+#+header: :mkdirp yes
+#+begin_src js -n :tangle index.js
+  const cli_args = require('command-line-args');
+  const option_defs = [
+      { name: 'help',   alias: 'h', type: Boolean },
+      { name: 'create', alias: 'c', type: String },
+      { name: 'delete', alias: 'd', type: String },
+  ];
+  const options = cli_args(option_defs);
+
+  console.log(options);
+#+end_src
+
+** Command Line Usage
+#+cindex:command-line usage
+#+cindex:usage
+#+cindex:@command{command-line-usage}
+This section generates a usage message activated by the =--help= option.
+
+#+name:CSV-SQLite3-command-line-usage
+#+begin_src js +n :tangle index.js
+  const cl_usage = require('command-line-usage');
+  const sections = [
+      {
+          header: 'CSV-SQLite',
+          content: 'Processes raw usb csv files into a form usable by SQLite3'
+      },
+      {
+          header: 'Options',
+          optionList: option_defs,
+      },
+      {
+          content: `Project directory: {underline ${process.env.WORKNODE}/CSV-SQLite3}`
+      }
+  ];
+  const usage = cl_usage(sections);
+
+
+  if (options.help)
+      console.log(usage);
+
+#+end_src
+
+* SQLite Tables
+#+cindex:tables
+The minimum SQLite tables that should be created are:
+
+- business
+- trust
+- personal
+
+
+More can be created as needed.
+
+** SQLite Table Columns
+#+cindex:columns
+The columns that should be created for each of the tables are:
+
+- =rowid= (implicit creation)
+- =date= in the form of =yyyy-mm-dd=
+- =type= containing either =CREDIT | DEBIT=
+- =check= containing a check number, if present
+- =payee=
+- =category=
+- =memo=
+- =workcase= containing a related case number (=case= is apparently a reserved
+  word and throws an error)
+- =amount= in the form =\pm##,###.##=
+
+
+| rowid       | date       | type   | check | payee    | category | memo | workcase | amount     |   |
+|-------------+------------+--------+-------+----------+----------+------+----------+------------+---|
+| primary key | yyyy-mm-dd | credit | ####  | text     | text     | text | integer  | \pm##,###.## |   |
+| implicit    | not null   | debit  | null  | not null | null     | null | null     | not null   |   |
+| creation    |            |        |       |          |          |      |          |            |   |
+|-------------+------------+--------+-------+----------+----------+------+----------+------------+---|
+
+* Create Database
+
+* Create Tables
+
+* Index
+:PROPERTIES:
+:unnumbered: t
+:index:    cp
+:END:
+
+* Macro Definitions                                                :noexport:
+#+macro: heading @@texinfo:@heading @@$1
+#+macro: subheading @@texinfo:@subheading @@$1
+
+* Export Settings                                                  :noexport:
+#+texinfo_filename:csv-sqlite3.info
+#+texinfo_class: info
+#+texinfo_header:
+#+texinfo_post_header:
+#+texinfo_dir_category:CSV
+#+texinfo_dir_title:ConvertCSV (convertcsv)
+#+texinfo_dir_desc:Convert USB CSV files to SQLite
+#+texinfo_printed_title:ConvertCSV Using Node.js CSV-Parser
+
+* Local Variables                                                  :noexport:
+# Local Variables:
+# time-stamp-pattern:"8/^\\#\\+date:%:y-%02m-%02d %02H:%02M$"
+# End:
