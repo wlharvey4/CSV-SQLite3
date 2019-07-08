@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-07 12:45
-#+macro: version Version 0.0.1
+#+date:2019-07-07 18:21
+#+macro: version Version 0.0.2
 
 * Introduction
 :PROPERTIES:
@@ -70,6 +70,33 @@ yarn --yes init
 yarn add command-line-args command-line-usage csv sqlite3
 #+end_src
 
+** Command Line Usage
+#+cindex:command-line usage
+#+cindex:usage
+#+cindex:@command{command-line-usage}
+This section generates a usage message activated by the =--help= option.
+
+#+name:csv-sqlite3-usage
+#+begin_src js +n :tangle index.js
+  const cl_usage = require('command-line-usage');
+  const sections = [
+      {
+          header: 'CSV-SQLite',
+          content: 'Processes raw usb csv files into a form usable by SQLite3'
+      },
+      {
+          header: 'Options',
+          optionList: option_defs,
+      },
+      {
+          content: `Project directory: {underline ${process.env.WORKNODE}/CSV-SQLite3}`
+      }
+  ];
+
+  console.log(cl_usage(sections));
+
+#+end_src
+
 ** Command Line Argument Processing
 #+cindex:command-line arguments
 #+cindex:arguments
@@ -87,6 +114,7 @@ Initially, the database should be creatable and deleteable.
 
 #+name:CSV-SQLite3-command-line-arg-processing
 #+header: :mkdirp yes
+#+header: :noweb yes
 #+begin_src js -n :tangle index.js
   const cli_args = require('command-line-args');
   const option_defs = [
@@ -95,38 +123,12 @@ Initially, the database should be creatable and deleteable.
       { name: 'delete', alias: 'd', type: String },
   ];
   const options = cli_args(option_defs);
-
   console.log(options);
-#+end_src
 
-** Command Line Usage
-#+cindex:command-line usage
-#+cindex:usage
-#+cindex:@command{command-line-usage}
-This section generates a usage message activated by the =--help= option.
-
-#+name:CSV-SQLite3-command-line-usage
-#+begin_src js +n :tangle index.js
-  const cl_usage = require('command-line-usage');
-  const sections = [
-      {
-          header: 'CSV-SQLite',
-          content: 'Processes raw usb csv files into a form usable by SQLite3'
-      },
-      {
-          header: 'Options',
-          optionList: option_defs,
-      },
-      {
-          content: `Project directory: {underline ${process.env.WORKNODE}/CSV-SQLite3}`
-      }
-  ];
-  const usage = cl_usage(sections);
-
-
-  if (options.help)
-      console.log(usage);
-
+  if (options.help) {
+          <<csv-sqlite3-usage>>
+          process.exit(0);
+  }
 #+end_src
 
 * SQLite Tables
