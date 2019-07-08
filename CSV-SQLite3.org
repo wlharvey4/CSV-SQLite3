@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-07 18:21
-#+macro: version Version 0.0.2
+#+date:2019-07-07 20:45
+#+macro: version Version 0.0.3
 
 * Introduction
 :PROPERTIES:
@@ -70,6 +70,14 @@ yarn --yes init
 yarn add command-line-args command-line-usage csv sqlite3
 #+end_src
 
+** Establish some Basic Dependencies
+#+name:csv-sqlite3-dependencies
+#+header: :mkdirp yes
+#+begin_src js -n :tangle index.js
+const fs = require('fs');
+
+#+end_src
+
 ** Command Line Usage
 #+cindex:command-line usage
 #+cindex:usage
@@ -77,7 +85,7 @@ yarn add command-line-args command-line-usage csv sqlite3
 This section generates a usage message activated by the =--help= option.
 
 #+name:csv-sqlite3-usage
-#+begin_src js +n :tangle index.js
+#+begin_src js
   const cl_usage = require('command-line-usage');
   const sections = [
       {
@@ -93,7 +101,8 @@ This section generates a usage message activated by the =--help= option.
       }
   ];
 
-  console.log(cl_usage(sections));
+  const usage = cl_usage(sections);
+  console.log(usage);
 
 #+end_src
 
@@ -112,15 +121,15 @@ Initially, the database should be creatable and deleteable.
 
 : csvsqlite --delete=<db-name> | -d <db-name>
 
-#+name:CSV-SQLite3-command-line-arg-processing
-#+header: :mkdirp yes
+#+name:csv-sqlite3-command-line-arg-processing
 #+header: :noweb yes
-#+begin_src js -n :tangle index.js
+#+begin_src js +n :tangle index.js
   const cli_args = require('command-line-args');
   const option_defs = [
-      { name: 'help',   alias: 'h', type: Boolean },
-      { name: 'create', alias: 'c', type: String },
-      { name: 'delete', alias: 'd', type: String },
+      { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
+      { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
+      { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file.' },
+      { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file' },
   ];
   const options = cli_args(option_defs);
   console.log(options);
@@ -129,6 +138,8 @@ Initially, the database should be creatable and deleteable.
           <<csv-sqlite3-usage>>
           process.exit(0);
   }
+
+
 #+end_src
 
 * SQLite Tables
@@ -165,7 +176,60 @@ The columns that should be created for each of the tables are:
 | creation    |            |        |       |          |          |      |          |            |   |
 |-------------+------------+--------+-------+----------+----------+------+----------+------------+---|
 
-* Create Database
+* Attach To or Delete a Database
+SQLite3 can have any number of databases.  Only one is initially attached, but
+more can be attached subsequent to the first attachment.  If the database does
+not exist, it will be created.  If the user requests that a database file be
+deleted, it will be backed up first, then deleted.
+
+The user can attach to a database file (either a specified file or the default
+file, defined as ~$WORKFIN/workfin.db~), or delete a specified database file.
+A deleted file is backed up to a backup directory that needs to be defined as a
+shell environment variable: =WORKBAK=.
+
+{{{heading(Verbose Mode)}}}
+
+#+cindex:verbose mode
+During development, call the ~verbose()~ method on the ~sqlite3~ object to
+enable better stack traces.  In production, remove this call for improved
+performance.
+
+#+name:csv-sqlite3-create-database
+#+begin_src js +n :tangle index.js
+
+  if ( !process.env.WORKDB ) {
+      console.error('You must define a shell variable named WORKFDB as a base directory for the database file.')
+      process.exit(1);
+  }
+
+  const WORKDB = process.env.WORKDB; // base directory for db
+  const DB_DEFAULT = 'workfin.sqlite';
+  const db_file = options.attach ? options.attach :    // for attaching
+                  options.delete ? options.delete :    // for deletion
+                  DB_DEFAULT;  	       	         // use the default name
+  const db_path = `${WORKDB}/${db_file}`;
+
+  /*---DELETE--*/
+  if (options.delete) {
+      if (!process.env.WORKBAK) {
+          console.error('You must define a shell variable named WORKBAK as a backup directory before deleting a database file.');
+          process.exit(1);
+      }
+      const db_path_bak = `${process.env.WORKBAK}/${db_file}.${Date.now()}`
+      fs.renameSync(db_path, db_path_bak);
+      console.error(`Successfully deleted ${db_path};\nThis file has been backed up to ${db_path_bak}`);
+      process.exit(0);
+  }
+
+  /*--ATTACH--*/
+  const sqlite3 = require('sqlite3').verbose();      // remove 'verbose' in production
+  const db = new sqlite3.Database(db_path, (err) => {
+      if (err)
+          console.error(`Error opening database file ${db_path}: ${err.message})`);
+      else
+          console.log(`Successfully attached to database file ${db_path}`);
+  });
+#+end_src
 
 * Create Tables
 
