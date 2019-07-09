@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-08 22:40
-#+macro: version Version 0.0.5
+#+date:2019-07-09 00:40
+#+macro: version Version 0.0.6
 
 * Introduction
 :PROPERTIES:
@@ -50,234 +50,6 @@ A sample =memo= entry is:
 
 - -66.0000
 
-* Create the Project
-This project's dependencies are the following Node.js modules:
-
-- ~command-line-args~
-- ~command-line-usage~
-- ~csv~
-- ~sqlite3~
-
-#+name:tangle-CSV-SQLite3-project
-#+begin_src emacs-lisp :results output :exports results
-(org-babel-tangle-file "CSV-SQLite3.org")
-#+end_src
-
-#+name:create-CSV-SQLite3-project
-#+header: :exports results :results output
-#+begin_src sh
-yarn --yes init
-yarn add command-line-args command-line-usage csv sqlite3
-#+end_src
-
-** Establish some Basic Dependencies
-In addition to the foregoing dependencies, this project uses the following
-Node.js built-in modules:
-
-- ~fs~ :: File System
-
-- ~util~ :: Utilities
-
-#+name:csv-sqlite3-dependencies
-#+header: :mkdirp yes
-#+header: :comments both
-#+begin_src js -n :tangle index.js
-const fs = require('fs');
-const util = require('util');
-#+end_src
-
-* Working with the Command Line
-:PROPERTIES:
-:header-args: :comments both
-:END:
-** Command Line Usage
-#+cindex:command-line usage
-#+cindex:usage
-#+cindex:@command{command-line-usage}
-This section generates a usage message activated by the =--help= option.
-
-#+name:csv-sqlite3-usage
-#+begin_src js
-const cl_usage = require('command-line-usage');
-const sections = [
-    {
-        header: 'CSV-SQLite',
-        content: 'Processes raw usb csv files into a form usable by SQLite3'
-    },
-    {
-        header: 'Options',
-        optionList: option_defs,
-    },
-    {
-        content: `Project directory: {underline ${process.env.WORKNODE}/CSV-SQLite3}`
-    }
-];
-const usage = cl_usage(sections);
-console.log(usage);
-#+end_src
-
-** Command Line Argument Processing
-#+cindex:command-line arguments
-#+cindex:arguments
-#+cindex:@command{command-line-arguments}
-#+cindex:@option{--help}
-#+cindex:@option{--create}
-#+cindex:@option{--delete}
-Initially, the database should be creatable and deleteable.
-
-: csvsqlite --help | -h
-
-: csvsqlite --create=<db-name> | -c <db-name>
-
-: csvsqlite --delete=<db-name> | -d <db-name>
-
-#+name:csv-sqlite3-command-line-arg-processing
-#+header: :noweb yes
-#+begin_src js +n :tangle index.js
-const cli_args = require('command-line-args');
-const option_defs = [
-    { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
-    { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
-    { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file.' },
-    { name: 'csv',    alias: 'c', type: String, multiple: true,  description: 'Process a CSV file [6815|6831] yyyy' },
-];
-const options = cli_args(option_defs);
-console.log(options);
-
-if (options.help) {
-    <<csv-sqlite3-usage>>
-    process.exit(0);
-}
-#+end_src
-
-* Process CSV Files
-:PROPERTIES:
-:header-args: :comments both
-:END:
-CSV financial files are found in the directories =$WORKUSB_[6815|6831]/yyyy=,
-where =yyyy= can be 2004--2019, and on.  Given =[6815|6831]= and a year
-=[2004|2005...2019]=, the file path will be
-=$WORKUSB_6815/YYYY/usb_6815--yyyy.csv=.
-
-#+name:csv-sqlite3-process-csv-files
-#+header: :noweb yes
-#+begin_src js +n :tangle index.js
-if (options.csv) {
-    const acct = options.csv[0],
-          year = options.csv[1];
-
-    if (!process.env.WORKUSB) {
-        console.error('You must assign a path to the shell variable WORKUSB');
-        process.exit(1);
-    }
-
-    const acct_year_path = `${process.env.WORKUSB}/usb_${acct}/${year}`;
-    const acct_year_csv_file = `usb_${acct}--${year}.csv`;
-    const acct_year_csv_file_path = `${acct_year_path}/${acct_year_csv_file}`;
-    if (!fs.existsSync(acct_year_csv_file_path) || !(fs.accessSync(acct_year_csv_file_path, fs.constants.R_OK) === undefined)) {
-        console.error(`Cannot find or access the CSV file at '${acct_year_csv_file_path}'.`);
-        process.exit(1);
-    }
-    console.log(`Successfully found the CSV file: '${acct_year_csv_file_path}'`);
-
-    <<csv-sqlite3-csv-parse>>
-
-    const csv_file_stream = fs.createReadStream(acct_year_csv_file_path, {encoding: 'utf8'});
-
-    csv_file_stream.on('readable', function () {
-        let record;
-        while ((record = this.read())) {
-            console.log(`readable record: ${record}`);
-            parser.write(record);
-        }
-        parser.end();
-    });
-
-    csv_file_stream.on('error', function(err) {
-        console.error(err.message);
-    });
-
-    csv_file_stream.on('end', function () {
-        console.log('Reader finsihed reading data.');
-    });
-}
-#+end_src
-
-** Parse the Found CSV File
-:PROPERTIES:
-:header-args: :comments both
-:END:
-First, the date needs to be transformed into the form yyyy-mm-dd.
-
-#+name:csv-sqlite3-csv-parse
-#+header: :noweb yes
-#+header: :comments link
-#+begin_src js
-const csv = require('csv');
-const parser = csv.parse({columns: true});
-const records = [];
-
-<<csv-transformer-func>>
-
-parser.on('readable', function() {
-    console.log('Parser beginning to read records.');
-    let record;
-    while ((record = parser.read())) {
-        console.log(`parser record: ${util.inspect(record)}`);
-        transformer.write(record);
-    }
-    transformer.end();
-});
-
-parser.on('error', function(err) {
-    console.error(err.message);
-});
-
-parser.on('end', function() {
-    console.log('Parser finished reading records.');
-});
-
-parser.on('finish', function () {
-    console.log('Parser finished writing records.');
-});
-#+end_src
-
-** Transform Each CSV Record
-:PROPERTIES:
-:header-args: :comments both
-:END:
-This code implements the CSV.Transfor functionality.
-
-#+name:csv-transformer-func
-#+begin_src js
-  const transformer = csv.transform(function(data) {return data});
-  const output = [];
-
-  var transform_function = function(record) {
-      return record;
-  }
-
-  transformer.on('readable', function() {
-      let record;
-      while ((record = transformer.read())) {
-          console.log(`Transformer record: ${util.inspect(record)}`);
-          output.push(record);
-      }
-  });
-
-  transformer.on('error', function(err) {
-      console.error(err.message);
-  });
-
-  transformer.on('finish', function() {
-      console.log('Transformer finished writing records.');
-  });
-
-  transformer.on('end', function() {
-      console.log('Transformer done reading records.');
-  });
-#+end_src
-
 * SQLite Tables
 #+cindex:tables
 The minimum SQLite tables that should be created are:
@@ -311,6 +83,123 @@ The columns that should be created for each of the tables are:
 | implicit    | not null   | debit  | null  | not null | null     | null | null     | not null   |   |
 | creation    |            |        |       |          |          |      |          |            |   |
 |-------------+------------+--------+-------+----------+----------+------+----------+------------+---|
+
+* Create the Project
+This project's dependencies are the following Node.js modules:
+
+- ~command-line-args~
+- ~command-line-usage~
+- ~csv~
+- ~sqlite3~
+
+#+name:tangle-CSV-SQLite3-project
+#+begin_src emacs-lisp :results output :exports results
+(org-babel-tangle-file "CSV-SQLite3.org")
+#+end_src
+
+#+name:create-CSV-SQLite3-project
+#+header: :exports results :results output
+#+begin_src sh
+yarn --yes init
+yarn add command-line-args command-line-usage csv sqlite3
+#+end_src
+
+** Establish some Basic Dependencies
+:PROPERTIES:
+:header-args: :comments both
+:END:
+In addition to the foregoing dependencies, this project uses the following
+Node.js built-in modules:
+
+- ~fs~ :: File System
+
+- ~util~ :: Utilities
+
+#+name:csv-sqlite3-dependencies
+#+header: :mkdirp yes
+#+begin_src js -n :tangle index.js
+const fs = require('fs');
+const util = require('util');
+#+end_src
+
+* Working with the Command Line
+:PROPERTIES:
+:header-args: :comments both
+:END:
+Here is implementation of command-line argument parsing and the generation of a
+usage message triggered by requesting the option =--help=.
+
+** Command Line Usage
+#+cindex:command-line usage
+#+cindex:usage
+#+cindex:@command{command-line-usage}
+This section generates a usage message activated by the =--help= option.  It
+uses the [[option-defs-variable][~options_defs~]] object created in the code below.
+
+#+name:csv-sqlite3-usage
+#+begin_src js
+const cl_usage = require('command-line-usage');
+const sections = [
+    {
+        header: 'CSV-SQLite',
+        content: 'Processes raw usb csv files into a form usable by SQLite3'
+    },
+    {
+        header: 'Options',
+        optionList: option_defs,
+    },
+    {
+        content: `Project directory: {underline ${process.env.WORKNODE}/CSV-SQLite3}`
+    }
+];
+const usage = cl_usage(sections);
+console.log(usage);
+#+end_src
+
+** Command Line Argument Processing
+#+cindex:command-line arguments
+#+cindex:arguments
+#+cindex:@command{command-line-arguments}
+#+cindex:@option{--help}
+#+cindex:@option{--create}
+#+cindex:@option{--delete}
+Options include giving the name of a database to attach to using =--attach
+<db>=.  In the absence of this option, a default database will be used.  A
+database can be deleted here as well using the option =--delete <db>=, with a
+backup being saved in the =WORKBAK= directory wtih the unix time suffixed to
+the end.
+
+Initially, the database should be creatable and deleteable.
+
+: csvsqlite --help | -h
+
+: csvsqlite --attach <db> | -a <db-name>
+
+: csvsqlite --delete <db> | -d <db-name>
+
+Also, identify the CSV file to transform via the =--csv= option:
+
+: csvsqlite --csv | -c 6815|6831 2004...2019
+
+<<option-defs-variable>>
+#+name:csv-sqlite3-command-line-arg-processing
+#+header: :noweb yes
+#+begin_src js +n :tangle index.js
+const cli_args = require('command-line-args');
+const option_defs = [
+    { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
+    { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
+    { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file.' },
+    { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
+];
+const options = cli_args(option_defs);
+console.log(options);
+
+if (options.help) {
+    <<csv-sqlite3-usage>>
+    process.exit(0);
+}
+#+end_src
 
 * Attach To or Delete a Database
 :PROPERTIES:
@@ -368,6 +257,161 @@ performance.
       else
           console.log(`Successfully attached to database file ${db_path}`);
   });
+#+end_src
+
+* Process CSV Files
+:PROPERTIES:
+:header-args: :comments both
+:END:
+The Node.js module [[https://csv.js.org/][~csv~]] contains both a [[https://csv.js.org/parse/][csv parser]] and [[https://csv.js.org/transform/][stream transformer]].
+The pattern is to parse a CSV string into records and pipe those records
+through the transformer to be massaged into shape.  From there the new data is
+saved in an SQLite3 database using [[https://www.npmjs.com/package/sqlite3][~sqlite3~]] (see its [[https://github.com/mapbox/node-sqlite3/wiki/API][API]] also).
+
+The processing of a CSV file, therefore, involves the following steps and
+Node.js modules:
+
+1. finding the correct CSV file (using ~FileSystem~)
+
+2. reading the CSV records from the file as a string (using ~StreamReader~)
+
+3. parsing the string into CSV records (using ~CSV-Parse~)
+
+4. transforming the CSV records into better data (using ~CSV-Transform~)
+
+5. saving the data in an SQLite database (using ~SQLite3~)
+
+** Set Up CSV-Transform
+:PROPERTIES:
+:header-args: :comments both
+:END:
+This code implements the stream transformer functionality, which is at the
+heart of this project.  The stream transformer receives data via its ~write~
+method, executed in the parser for every CSV record in the file, in its
+~transform~ method, which contains a transform function as its first argument.
+This transform function argument performs the major work of manipulating each
+record.  After it transforms the data, the transformer receives the new data
+via a =readable= event, where it can process the data.  In this case, the data
+will be saved into the SQLite3 database.
+
+#+name:csv-transformer
+#+begin_src js +n :tangle index.js
+  const csv = require('csv');
+  const transformer = csv.transform(function(data) {return data});
+  const output = [];
+
+  transformer.on('readable', function() {
+      let record;
+      while ((record = transformer.read())) {
+          console.log(`Transformer record: ${util.inspect(record)}`);
+          output.push(record);
+      }
+  });
+
+  transformer.on('error', function(err) {
+      console.error(err.message);
+  });
+
+  transformer.on('finish', function() {
+      console.log('Transformer finished writing records.');
+  });
+
+  transformer.on('end', function() {
+      console.log('Transformer done reading records.');
+  });
+#+end_src
+
+** Set Up CSV-Parse
+:PROPERTIES:
+:header-args: :comments both
+:END:
+This section implements the csv parser.  By default, it does little other than
+read a large string of data and parse it into an array of records.  By giving
+it the option =columns = true=, however, the parser will use the first line as
+a list of column headings, and produce an array of objects where the keys are
+column names, and the values are column entries.  Each record is written to the
+stream transformer.
+
+#+name:csv-sqlite3-csv-parse
+#+header: :noweb yes
+#+header: :comments link
+#+begin_src js +n :tangle index.js
+const parser = csv.parse({columns: true});
+const records = [];
+
+parser.on('readable', function() {
+    console.log('Parser beginning to read records.');
+    let record;
+    while ((record = parser.read())) {
+        console.log(`parser record: ${util.inspect(record)}`);
+        transformer.write(record);
+    }
+    transformer.end();
+});
+
+parser.on('error', function(err) {
+    console.error(err.message);
+});
+
+parser.on('end', function() {
+    console.log('Parser finished reading records.');
+});
+
+parser.on('finish', function () {
+    console.log('Parser finished writing records.');
+});
+#+end_src
+
+** Set Up StreamReader
+This section implements the Stream Reader that reads the CSV file in as a large
+string of data and sends it to the csv parser via the parser's ~write~ method.
+
+CSV financial files are found in the directories =$WORKUSB_[6815|6831]/yyyy=,
+where =yyyy= can be 2004--2019, and on.  Given =[6815|6831]= and a year
+=[2004|2005...2019]=, the file path will be
+=$WORKUSB_6815/YYYY/usb_6815--yyyy.csv=.  This code makes sure the file exists
+and the user has proper permissions to read it before proceeding.
+
+#+name:csv-sqlite3-process-csv-files
+#+header: :noweb yes
+#+begin_src js +n :tangle index.js
+if (options.csv) {
+    const acct = options.csv[0],
+          year = options.csv[1];
+
+    if (!process.env.WORKUSB) {
+        console.error('You must assign a path to the shell variable WORKUSB');
+        process.exit(1);
+    }
+
+    const acct_year_path = `${process.env.WORKUSB}/usb_${acct}/${year}`;
+    const acct_year_csv_file = `usb_${acct}--${year}.csv`;
+    const acct_year_csv_file_path = `${acct_year_path}/${acct_year_csv_file}`;
+    if (!fs.existsSync(acct_year_csv_file_path) || !(fs.accessSync(acct_year_csv_file_path, fs.constants.R_OK) === undefined)) {
+        console.error(`Cannot find or access the CSV file at '${acct_year_csv_file_path}'.`);
+        process.exit(1);
+    }
+    console.log(`Successfully found the CSV file: '${acct_year_csv_file_path}'`);
+
+    const csv_file_stream = fs.createReadStream(acct_year_csv_file_path, {encoding: 'utf8'});
+
+    csv_file_stream.on('readable', function () {
+        let record;
+        while ((record = this.read())) {
+            console.log(`readable record: ${record}`);
+            parser.write(record);
+        }
+        parser.end();
+    });
+
+    csv_file_stream.on('error', function(err) {
+        console.error(err.message);
+    });
+
+    csv_file_stream.on('end', function () {
+        console.log('Reader finsihed reading data.');
+    });
+}
 #+end_src
 
 * Create Tables
