@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-07 20:45
-#+macro: version Version 0.0.3
+#+date:2019-07-08 20:55
+#+macro: version Version 0.0.4
 
 * Introduction
 :PROPERTIES:
@@ -75,6 +75,7 @@ yarn add command-line-args command-line-usage csv sqlite3
 #+header: :mkdirp yes
 #+begin_src js -n :tangle index.js
 const fs = require('fs');
+const util = require('util');
 
 #+end_src
 
@@ -129,7 +130,7 @@ Initially, the database should be creatable and deleteable.
       { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
       { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
       { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file.' },
-      { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file' },
+      { name: 'csv',    alias: 'c', type: String, multiple: true,  description: 'Process a CSV file [6815|6831] yyyy' },
   ];
   const options = cli_args(option_defs);
   console.log(options);
@@ -140,6 +141,123 @@ Initially, the database should be creatable and deleteable.
   }
 
 
+#+end_src
+
+* Process CSV Files
+CSV financial files are found in the directories =$WORKUSB_[6815|6831]/yyyy=,
+where =yyyy= can be 2004--2019, and on.  Given =[6815|6831]= and a year
+=[2004|2005...2019]=, the file path will be
+=$WORKUSB_6815/YYYY/usb_6815--yyyy.csv=.
+
+#+name:csv-sqlite3-process-csv-files
+#+header: :noweb yes
+#+begin_src js +n :tangle index.js
+    if (options.csv) {
+        const acct = options.csv[0],
+              year = options.csv[1];
+
+        if (!process.env.WORKUSB) {
+            console.error('You must assign a path to the shell variable WORKUSB');
+            process.exit(1);
+        }
+
+        const acct_year_path = `${process.env.WORKUSB}/usb_${acct}/${year}`;
+        const acct_year_csv_file = `usb_${acct}--${year}.csv`;
+        const acct_year_csv_file_path = `${acct_year_path}/${acct_year_csv_file}`;
+        if (!fs.existsSync(acct_year_csv_file_path) || !(fs.accessSync(acct_year_csv_file_path, fs.constants.R_OK) === undefined)) {
+            console.error(`Cannot find or access the CSV file at '${acct_year_csv_file_path}'.`);
+            process.exit(1);
+        }
+        console.log(`Successfully found the CSV file: '${acct_year_csv_file_path}'`);
+
+        <<csv-sqlite3-csv-parse>>
+
+        const csv_file_stream = fs.createReadStream(acct_year_csv_file_path, {encoding: 'utf8'});
+
+        csv_file_stream.on('readable', function () {
+            let record;
+            while (record = this.read()) {
+                console.log(`readable record: ${record}`);
+                parser.write(record);
+            }
+            parser.end();
+        });
+
+        csv_file_stream.on('error', function(err) {
+            console.error(err.message);
+        });
+
+        csv_file_stream.on('end', function () {
+            console.log('Reader finsihed reading data.');
+        })
+    }
+#+end_src
+
+** Parse the Found CSV File
+First, the date needs to be transformed into the form yyyy-mm-dd.
+
+#+name:csv-sqlite3-csv-parse
+#+header: :noweb yes
+#+begin_src js
+  const csv = require('csv');
+  const parser = csv.parse({columns: true});
+  const records = [];
+
+  <<csv-transformer-func>>
+
+  parser.on('readable', function() {
+      console.log('Parser beginning to read records.');
+      let record;
+      while (record = parser.read()) {
+          console.log(`parser record: ${util.inspect(record)}`);
+          transformer.write(record);
+      }
+      transformer.end();
+  });
+
+  parser.on('error', function(err) {
+      console.error(err.message);
+  });
+
+  parser.on('end', function() {
+      console.log('Parser finished reading records.');
+  });
+
+  parser.on('finish', function () {
+      console.log('Parser finished writing records.');
+  });
+#+end_src
+
+** Transform Each CSV Record
+
+#+name:csv-transformer-func
+#+begin_src js
+  const transformer = csv.transform(function(data) {return data});
+  const output = [];
+
+  var transform_function = function(record) {
+      return record;
+  }
+
+  transformer.on('readable', function() {
+      let record;
+      while (record = transformer.read()) {
+          console.log(`Transformer record: ${util.inspect(record)}`);
+          output.push(record);
+      }
+  });
+
+  transformer.on('error', function(err) {
+      console.error(err.message);
+  });
+
+  transformer.on('finish', function() {
+      console.log('Transformer finished writing records.');
+  });
+
+  transformer.on('end', function() {
+      console.log('Transformer done reading records.');
+  });
 #+end_src
 
 * SQLite Tables
