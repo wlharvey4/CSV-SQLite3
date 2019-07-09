@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-08 20:55
-#+macro: version Version 0.0.4
+#+date:2019-07-08 22:40
+#+macro: version Version 0.0.5
 
 * Introduction
 :PROPERTIES:
@@ -51,7 +51,7 @@ A sample =memo= entry is:
 - -66.0000
 
 * Create the Project
-This project uses and installs at this point the following modules:
+This project's dependencies are the following Node.js modules:
 
 - ~command-line-args~
 - ~command-line-usage~
@@ -71,14 +71,25 @@ yarn add command-line-args command-line-usage csv sqlite3
 #+end_src
 
 ** Establish some Basic Dependencies
+In addition to the foregoing dependencies, this project uses the following
+Node.js built-in modules:
+
+- ~fs~ :: File System
+
+- ~util~ :: Utilities
+
 #+name:csv-sqlite3-dependencies
 #+header: :mkdirp yes
+#+header: :comments both
 #+begin_src js -n :tangle index.js
 const fs = require('fs');
 const util = require('util');
-
 #+end_src
 
+* Working with the Command Line
+:PROPERTIES:
+:header-args: :comments both
+:END:
 ** Command Line Usage
 #+cindex:command-line usage
 #+cindex:usage
@@ -87,24 +98,22 @@ This section generates a usage message activated by the =--help= option.
 
 #+name:csv-sqlite3-usage
 #+begin_src js
-  const cl_usage = require('command-line-usage');
-  const sections = [
-      {
-          header: 'CSV-SQLite',
-          content: 'Processes raw usb csv files into a form usable by SQLite3'
-      },
-      {
-          header: 'Options',
-          optionList: option_defs,
-      },
-      {
-          content: `Project directory: {underline ${process.env.WORKNODE}/CSV-SQLite3}`
-      }
-  ];
-
-  const usage = cl_usage(sections);
-  console.log(usage);
-
+const cl_usage = require('command-line-usage');
+const sections = [
+    {
+        header: 'CSV-SQLite',
+        content: 'Processes raw usb csv files into a form usable by SQLite3'
+    },
+    {
+        header: 'Options',
+        optionList: option_defs,
+    },
+    {
+        content: `Project directory: {underline ${process.env.WORKNODE}/CSV-SQLite3}`
+    }
+];
+const usage = cl_usage(sections);
+console.log(usage);
 #+end_src
 
 ** Command Line Argument Processing
@@ -125,25 +134,26 @@ Initially, the database should be creatable and deleteable.
 #+name:csv-sqlite3-command-line-arg-processing
 #+header: :noweb yes
 #+begin_src js +n :tangle index.js
-  const cli_args = require('command-line-args');
-  const option_defs = [
-      { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
-      { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
-      { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file.' },
-      { name: 'csv',    alias: 'c', type: String, multiple: true,  description: 'Process a CSV file [6815|6831] yyyy' },
-  ];
-  const options = cli_args(option_defs);
-  console.log(options);
+const cli_args = require('command-line-args');
+const option_defs = [
+    { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
+    { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
+    { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file.' },
+    { name: 'csv',    alias: 'c', type: String, multiple: true,  description: 'Process a CSV file [6815|6831] yyyy' },
+];
+const options = cli_args(option_defs);
+console.log(options);
 
-  if (options.help) {
-          <<csv-sqlite3-usage>>
-          process.exit(0);
-  }
-
-
+if (options.help) {
+    <<csv-sqlite3-usage>>
+    process.exit(0);
+}
 #+end_src
 
 * Process CSV Files
+:PROPERTIES:
+:header-args: :comments both
+:END:
 CSV financial files are found in the directories =$WORKUSB_[6815|6831]/yyyy=,
 where =yyyy= can be 2004--2019, and on.  Given =[6815|6831]= and a year
 =[2004|2005...2019]=, the file path will be
@@ -152,83 +162,91 @@ where =yyyy= can be 2004--2019, and on.  Given =[6815|6831]= and a year
 #+name:csv-sqlite3-process-csv-files
 #+header: :noweb yes
 #+begin_src js +n :tangle index.js
-    if (options.csv) {
-        const acct = options.csv[0],
-              year = options.csv[1];
+if (options.csv) {
+    const acct = options.csv[0],
+          year = options.csv[1];
 
-        if (!process.env.WORKUSB) {
-            console.error('You must assign a path to the shell variable WORKUSB');
-            process.exit(1);
-        }
-
-        const acct_year_path = `${process.env.WORKUSB}/usb_${acct}/${year}`;
-        const acct_year_csv_file = `usb_${acct}--${year}.csv`;
-        const acct_year_csv_file_path = `${acct_year_path}/${acct_year_csv_file}`;
-        if (!fs.existsSync(acct_year_csv_file_path) || !(fs.accessSync(acct_year_csv_file_path, fs.constants.R_OK) === undefined)) {
-            console.error(`Cannot find or access the CSV file at '${acct_year_csv_file_path}'.`);
-            process.exit(1);
-        }
-        console.log(`Successfully found the CSV file: '${acct_year_csv_file_path}'`);
-
-        <<csv-sqlite3-csv-parse>>
-
-        const csv_file_stream = fs.createReadStream(acct_year_csv_file_path, {encoding: 'utf8'});
-
-        csv_file_stream.on('readable', function () {
-            let record;
-            while (record = this.read()) {
-                console.log(`readable record: ${record}`);
-                parser.write(record);
-            }
-            parser.end();
-        });
-
-        csv_file_stream.on('error', function(err) {
-            console.error(err.message);
-        });
-
-        csv_file_stream.on('end', function () {
-            console.log('Reader finsihed reading data.');
-        })
+    if (!process.env.WORKUSB) {
+        console.error('You must assign a path to the shell variable WORKUSB');
+        process.exit(1);
     }
+
+    const acct_year_path = `${process.env.WORKUSB}/usb_${acct}/${year}`;
+    const acct_year_csv_file = `usb_${acct}--${year}.csv`;
+    const acct_year_csv_file_path = `${acct_year_path}/${acct_year_csv_file}`;
+    if (!fs.existsSync(acct_year_csv_file_path) || !(fs.accessSync(acct_year_csv_file_path, fs.constants.R_OK) === undefined)) {
+        console.error(`Cannot find or access the CSV file at '${acct_year_csv_file_path}'.`);
+        process.exit(1);
+    }
+    console.log(`Successfully found the CSV file: '${acct_year_csv_file_path}'`);
+
+    <<csv-sqlite3-csv-parse>>
+
+    const csv_file_stream = fs.createReadStream(acct_year_csv_file_path, {encoding: 'utf8'});
+
+    csv_file_stream.on('readable', function () {
+        let record;
+        while ((record = this.read())) {
+            console.log(`readable record: ${record}`);
+            parser.write(record);
+        }
+        parser.end();
+    });
+
+    csv_file_stream.on('error', function(err) {
+        console.error(err.message);
+    });
+
+    csv_file_stream.on('end', function () {
+        console.log('Reader finsihed reading data.');
+    });
+}
 #+end_src
 
 ** Parse the Found CSV File
+:PROPERTIES:
+:header-args: :comments both
+:END:
 First, the date needs to be transformed into the form yyyy-mm-dd.
 
 #+name:csv-sqlite3-csv-parse
 #+header: :noweb yes
+#+header: :comments link
 #+begin_src js
-  const csv = require('csv');
-  const parser = csv.parse({columns: true});
-  const records = [];
+const csv = require('csv');
+const parser = csv.parse({columns: true});
+const records = [];
 
-  <<csv-transformer-func>>
+<<csv-transformer-func>>
 
-  parser.on('readable', function() {
-      console.log('Parser beginning to read records.');
-      let record;
-      while (record = parser.read()) {
-          console.log(`parser record: ${util.inspect(record)}`);
-          transformer.write(record);
-      }
-      transformer.end();
-  });
+parser.on('readable', function() {
+    console.log('Parser beginning to read records.');
+    let record;
+    while ((record = parser.read())) {
+        console.log(`parser record: ${util.inspect(record)}`);
+        transformer.write(record);
+    }
+    transformer.end();
+});
 
-  parser.on('error', function(err) {
-      console.error(err.message);
-  });
+parser.on('error', function(err) {
+    console.error(err.message);
+});
 
-  parser.on('end', function() {
-      console.log('Parser finished reading records.');
-  });
+parser.on('end', function() {
+    console.log('Parser finished reading records.');
+});
 
-  parser.on('finish', function () {
-      console.log('Parser finished writing records.');
-  });
+parser.on('finish', function () {
+    console.log('Parser finished writing records.');
+});
 #+end_src
 
 ** Transform Each CSV Record
+:PROPERTIES:
+:header-args: :comments both
+:END:
+This code implements the CSV.Transfor functionality.
 
 #+name:csv-transformer-func
 #+begin_src js
@@ -241,7 +259,7 @@ First, the date needs to be transformed into the form yyyy-mm-dd.
 
   transformer.on('readable', function() {
       let record;
-      while (record = transformer.read()) {
+      while ((record = transformer.read())) {
           console.log(`Transformer record: ${util.inspect(record)}`);
           output.push(record);
       }
@@ -295,6 +313,9 @@ The columns that should be created for each of the tables are:
 |-------------+------------+--------+-------+----------+----------+------+----------+------------+---|
 
 * Attach To or Delete a Database
+:PROPERTIES:
+:header-args: :comments both
+:END:
 SQLite3 can have any number of databases.  Only one is initially attached, but
 more can be attached subsequent to the first attachment.  If the database does
 not exist, it will be created.  If the user requests that a database file be
@@ -316,7 +337,7 @@ performance.
 #+begin_src js +n :tangle index.js
 
   if ( !process.env.WORKDB ) {
-      console.error('You must define a shell variable named WORKFDB as a base directory for the database file.')
+      console.error('You must define a shell variable named WORKFDB as a base directory for the database file.');
       process.exit(1);
   }
 
@@ -333,7 +354,7 @@ performance.
           console.error('You must define a shell variable named WORKBAK as a backup directory before deleting a database file.');
           process.exit(1);
       }
-      const db_path_bak = `${process.env.WORKBAK}/${db_file}.${Date.now()}`
+      const db_path_bak = `${process.env.WORKBAK}/${db_file}.${Date.now()}`;
       fs.renameSync(db_path, db_path_bak);
       console.error(`Successfully deleted ${db_path};\nThis file has been backed up to ${db_path_bak}`);
       process.exit(0);
