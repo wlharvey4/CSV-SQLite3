@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-09 21:31
-#+macro: version Version 0.0.7
+#+date:2019-07-14 17:44
+#+macro: version Version 0.0.8
 
 * Introduction
 :PROPERTIES:
@@ -448,32 +448,103 @@ The Transform Function receives a record and massages it into shape.
 #+name:stream-transform-function
 #+begin_src js +n :tangle index.js
   const accounting = require('accounting');
+
   const transform_function = function (record) {
-      // Format date as yyyy-mm-dd and delete Date
+      const DEBIT   = 'debit';
+      const CREDIT  = 'credit';
+      const CHECK   = 'check';
+      const CASH    = 'cash';
+      const UNKNOWN = 'unknown';
+      const TXFR    = 'transfer';
+      let   trfrom  = '';
+
+      // Format date as yyyy-mm-dd; delete original Date
       record.date = new Date(record['Date']).toISOString().split('T')[0];
       delete record['Date'];
 
-      // Change Transaction to type
-      record.type = record['Transaction'];
+      // Change Transaction to type; delete original Transaction
+      record.type = record['Transaction'].toLowerCase();
       delete record['Transaction'];
 
-      // Change Name to payee
-      record.payee = record['Name'];
-      delete record['Name'];
-
-      // Change Amount to amount as Currency type
+      // Change Amount to amount as Currency type; delete original Amount
       record.amount = accounting.formatMoney(record['Amount']);
       delete record['Amount'];
 
-      // Clean up Memo by removing Download message; return as memo
+      // Change Name to payee; keep original Name as OrigName; delete Name
+      record.payee = record['Name'].toLowerCase();
+      record.OrigPayee = record['Name'];
+      delete record['Name'];
+
+      // Clean up Memo by removing Download message; return as memo; keep Memo as OrigMemo
       let re = new RegExp('Download from usbank.com.\\s*');
-      record.memo = record['Memo'].replace(re,'');
+      record.memo = record['Memo'].replace(re,'').toLowerCase();
+      record.OrigMemo = record['Memo'];
       delete record['Memo'];
 
-      re = /INTERNET BANKING TRANSFER WITHDRAWAL/;
-      if ((f = re.exec(record.payee))) {
-          record.payee = record.payee.replace(re,'');
+      // Add new columns: check, txfr, _case, desc1, desc2
+      record.check = null;
+      record.txfr  = null;
+      record._case = null;
+      record.desc1 = null;
+      record.desc2 = null;
+
+      // Add check no. to check column
+      if (record.payee === CHECK) {
+          const checkno = record.type.replace(/^0*/,'');
+          record.check = checkno;
+          record.type = DEBIT;
+          record.payee = UNKNOWN;
+          record.memo += `Purchase by check no. ${checkno}`;
+          record.desc1 = 'purchase';
+          record.desc2 = 'check';
       }
+
+      if (record.payee.match(/(internet|mobile) (banking) transfer (deposit|withdrawal) (\d{4})\s*$/)) {
+          record.desc1 = RegExp.$3;
+          record.desc2 = RegExp.$1;
+          record.txfr = `${(RegExp.$3 === 'deposit') ? '<' : '>'} usb_${RegExp.$4}`;
+          tofrom = (record.type === 'debit') ? 'to' : 'from';
+          record.payee = (record.type === 'debit') ? `usb_${RegExp.$4}` : `usb_${options.csv[0]}`;
+          record.memo = `${record.desc2} ${record.desc1}: ${TXFR} ${tofrom} ${record.memo}`;
+      }
+
+      if (record.payee.match(/debit (purchase)\s*-?\s*(visa)? /)) {
+          record.desc1 = RegExp.$1;
+          record.desc2 = RegExp.$2;
+          record.payee = record.payee.replace(RegExp.lastMatch,'');
+          record.memo = `${record.desc2} ${record.desc1} ${record.memo}`.trimLeft();;
+      }
+
+      if (record.payee.match(/(electronic) (withdrawal) |(web authorized) (pmt) |(atm|electronic) (deposit|withdrawal) /)) {
+          tofrom = '';
+          record.desc1 = RegExp.$2 ? RegExp.$2 : RegExp.$4 ? RegExp.$4 : RegExp.$6;
+          record.desc2 = RegExp.$1 ? RegExp.$1 : RegExp.$3 ? RegExp.$3 : RegExp.$5;
+          if (RegExp.$5 === 'atm' || RegExp.$5 === 'electronic') {
+              record.payee = (RegExp.$6 === 'deposit') ? `usb_${options.csv[0]}` : CASH;
+          } else {
+              record.payee = record.payee.replace(RegExp.lastMatch,'');
+          }
+          if (record.memo.match(/paypal/) && record.type === CREDIT) {
+              record.txfr = `< ${RegExp.lastMatch}`;
+              tofrom = ' from';
+          }
+          record.memo = `${record.desc2} ${record.desc1}${tofrom} ${record.memo}`;
+      }
+
+      // if (record.payee.match(/\s*(portland|vancouver|seattle){2,}\s*(or|wa)\s*/)) {
+      //     record.payee.replace(RegExp.lastMatch, `${RegExp.$1} ${RegExp.$2}`);
+      //     record.memo.replace(RegExp.lastMatch, `${RegExp.$1} ${RegExp.$2}`);
+      // }
+      record.payee = record.payee.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
+      record.memo  = record.memo.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
+      record.payee = record.payee.replace(/\s*[-\d]{5,}\s*\w{2}$/,''); // '650-4724100 CA' & '        855-576-4493WA' & '  800-3333330 MA'
+      record.memo  = record.memo.replace(/\s*[-\d]{5,}\s*\w{2}$/,'');
+      record.payee = record.payee.replace(/(\s\w*https)?www.*$/,''); // WWW.ATT.COM TX; UDEMY ONLINE COUHTTPSWWW.UDECA
+      record.memo  = record.memo.replace(/(\s\w*https)?www.*$/,'');
+      record.payee = record.payee.replace(/\s*\w+\.com\s+\w{2}$/, '');
+      record.memo  = record.memo.replace( /\s*\w+\.com\s+\w{2}$/, '');
+      record.payee = record.payee.replace(/\s{2,}/g,' ');
+      record.memo  = record.memo.replace(/\s{2,}/g,' ');
 
       return record;
   }
@@ -482,7 +553,7 @@ The Transform Function receives a record and massages it into shape.
 #+RESULTS: stream-transform-function
 : undefined
 
-** Set Up the Stream Transform
+*** Set Up the Stream Transform
 #+name:stream-transformer
 #+begin_src js +n :tangle index.js
   const csv = require('csv');
@@ -598,7 +669,7 @@ if (options.csv) {
     });
 
     csv_file_stream.on('end', function () {
-        console.log('Reader finsihed reading data.');
+        console.log('Reader finished reading data.');
     });
 }
 #+end_src
