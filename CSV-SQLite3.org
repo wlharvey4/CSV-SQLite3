@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-15 14:28
-#+macro: version Version 0.0.8
+#+date:2019-07-15 16:36
+#+macro: version Version 0.0.9
 
 * Introduction
 :PROPERTIES:
@@ -54,35 +54,39 @@ A sample =memo= entry is:
 #+cindex:tables
 The minimum SQLite tables that should be created are:
 
-- business
-- trust
-- personal
+- usb :: business (6815), trust (6831), personal (6151)
+- cases :: 190301, etc.
+- people :: John Doe, Mary Jane, etc.
+- businesses :: Law Office of ..., etc.
 
 
 More can be created as needed.
 
 ** SQLite Table Columns
 #+cindex:columns
-The columns that should be created for each of the tables are:
+The columns that should be created for the bank tables are:
 
 - =rowid= (implicit creation)
 - =date= in the form of =yyyy-mm-dd=
 - =type= containing either =CREDIT | DEBIT=
 - =check= containing a check number, if present
+- =txfr= containing a direction arrow (=<= or =>=) and a bank account (=usb_6151=)
 - =payee=
 - =category=
 - =memo=
-- =workcase= containing a related case number (=case= is apparently a reserved
+- =desc1=
+- =desc2=
+- =_case= containing a related case number (=case= is apparently a reserved
   word and throws an error)
 - =amount= in the form =\pm##,###.##=
 
 
-| rowid       | date       | type   | check | payee    | category | memo | workcase | amount     |   |
-|-------------+------------+--------+-------+----------+----------+------+----------+------------+---|
-| primary key | yyyy-mm-dd | credit | ####  | text     | text     | text | integer  | \pm##,###.## |   |
-| implicit    | not null   | debit  | null  | not null | null     | null | null     | not null   |   |
-| creation    |            |        |       |          |          |      |          |            |   |
-|-------------+------------+--------+-------+----------+----------+------+----------+------------+---|
+| rowid       | date       | type   | check | txfr       | payee    | category | memo | desc1 | desc2 | _case   | amount     |
+|-------------+------------+--------+-------+------------+----------+----------+------+-------+-------+---------+------------|
+| primary key | yyyy-mm-dd | credit | ####  | < usb 6151 | text     | text     | text | text  | text  | integer | \pm##,###.## |
+| implicit    | not null   | debit  | null  | > usb 6831 | not null | null     | null | null  | null  | null    | not null   |
+| creation    |            |        |       | null       |          |          |      |       |       |         |            |
+|-------------+------------+--------+-------+------------+----------+----------+------+-------+-------+---------+------------|
 
 * Create the Project
 This project's dependencies are the following Node.js modules:
@@ -443,7 +447,12 @@ via a =readable= event, where it can process the data.  In this case, the data
 will be saved into the SQLite3 database.
 
 *** Set Up the Transform Function
-The Transform Function receives a record and massages it into shape.
+The Transform Function receives a record and massages it into shape.  The
+following regular expressions were created based upon inspection of the raw
+data as it came from the bank for years 2016, 2017, and 2018.  It does a decent
+job of creating readable payees and memos, as well as txfrs (transfers), but it
+has not been set up to do anything for check payees, categories or related
+records, for example.
 
 #+name:stream-transform-function
 #+begin_src js +n :tangle index.js
@@ -628,12 +637,13 @@ The Transform Function receives a record and massages it into shape.
 :PROPERTIES:
 :header-args: :comments both
 :END:
+#+cindex:@code{write} method, transformer
 This section implements the csv parser.  By default, it does little other than
 read a large string of data and parse it into an array of records.  By giving
 it the option =columns = true=, however, the parser will use the first line as
 a list of column headings, and produce an array of objects where the keys are
 column names, and the values are column entries.  Each record is written to the
-stream transformer.
+stream transformer using its =WRITE= method.
 
 #+name:csv-sqlite3-csv-parse
 #+header: :noweb yes
@@ -645,10 +655,13 @@ const records = [];
 parser.on('readable', function() {
     console.log('Parser beginning to read records.');
     let record;
+
+    /* PARSE A RECORD AND WRITE TO THE TRANSFORMER */
     while ((record = parser.read())) {
         console.log(`parser record:\n${util.inspect(record)}`);
         transformer.write(record);
     }
+
     transformer.end();
 });
 
@@ -678,43 +691,51 @@ and the user has proper permissions to read it before proceeding.
 #+name:csv-sqlite3-process-csv-files
 #+header: :noweb yes
 #+begin_src js +n :tangle index.js
-if (options.csv) {
-    const acct = options.csv[0],
-          year = options.csv[1];
+  if (options.csv) {
+      const acct = options.csv[0],
+            year = options.csv[1];
 
-    if (!process.env.WORKUSB) {
-        console.error('You must assign a path to the shell variable WORKUSB');
-        process.exit(1);
-    }
+      if (!process.env.WORKUSB) {
+          console.error('You must assign a path to the shell variable WORKUSB');
+          process.exit(1);
+      }
 
-    const acct_year_path = `${process.env.WORKUSB}/usb_${acct}/${year}`;
-    const acct_year_csv_file = `usb_${acct}--${year}.csv`;
-    const acct_year_csv_file_path = `${acct_year_path}/${acct_year_csv_file}`;
-    if (!fs.existsSync(acct_year_csv_file_path) || !(fs.accessSync(acct_year_csv_file_path, fs.constants.R_OK) === undefined)) {
-        console.error(`Cannot find or access the CSV file at '${acct_year_csv_file_path}'.`);
-        process.exit(1);
-    }
-    console.log(`Successfully found the CSV file: '${acct_year_csv_file_path}'`);
+      const acct_year_path = `${process.env.WORKUSB}/usb_${acct}/${year}`;
+      const acct_year_csv_file = `usb_${acct}--${year}.csv`;
+      const acct_year_csv_file_path = `${acct_year_path}/${acct_year_csv_file}`;
+      if (!fs.existsSync(acct_year_csv_file_path) || !(fs.accessSync(acct_year_csv_file_path, fs.constants.R_OK) === undefined)) {
+          console.error(`Cannot find or access the CSV file at '${acct_year_csv_file_path}'.`);
+          process.exit(1);
+      }
+      console.log(`Successfully found the CSV file: '${acct_year_csv_file_path}'`);
 
-    const csv_file_stream = fs.createReadStream(acct_year_csv_file_path, {encoding: 'utf8'});
+      /* CREATE THE STREAM HERE */
+      const csv_file_stream = fs.createReadStream(acct_year_csv_file_path, {encoding: 'utf8'});
 
-    csv_file_stream.on('readable', function () {
-        let record;
-        while ((record = this.read())) {
-            console.log(`readable record: ${record}`);
-            parser.write(record);
-        }
-        parser.end();
-    });
+      /* Set up streaming events 'READABLE', 'ERROR', and 'END' */
+      csv_file_stream.on('readable', function () {
+          let record;
 
-    csv_file_stream.on('error', function(err) {
-        console.error(err.message);
-    });
+          /* READ THE RECORDS */
+          while ((record = this.read())) {
+              console.log(`readable record: ${record}`);
 
-    csv_file_stream.on('end', function () {
-        console.log('Reader finished reading data.');
-    });
-}
+              /* WRITE A RECORD TO THE PARSER */
+              parser.write(record);
+
+          }
+          parser.end();
+
+      });
+
+      csv_file_stream.on('error', function(err) {
+          console.error(err.message);
+      });
+
+      csv_file_stream.on('end', function () {
+          console.log('Reader finished reading data.');
+      });
+  }
 #+end_src
 
 * Create Tables
