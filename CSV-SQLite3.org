@@ -2,7 +2,7 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-14 17:44
+#+date:2019-07-15 14:28
 #+macro: version Version 0.0.8
 
 * Introduction
@@ -454,9 +454,20 @@ The Transform Function receives a record and massages it into shape.
       const CREDIT  = 'credit';
       const CHECK   = 'check';
       const CASH    = 'cash';
+      const DEPOSIT = 'deposit';
       const UNKNOWN = 'unknown';
       const TXFR    = 'transfer';
+      const USBANK  = 'usbank';
       let   trfrom  = '';
+
+      // Add new columns: check, txfr, acct, _case, desc1, desc2, category
+      record.check = null; // check no.
+      record.txfr  = null; // direction and acct #
+      record.acct  = null; // related account foreign key
+      record._case = null; // related case foreign key
+      record.desc1 = null; // noun
+      record.desc2 = null; // adjective
+      record.category = null; // categorization of the transaction
 
       // Format date as yyyy-mm-dd; delete original Date
       record.date = new Date(record['Date']).toISOString().split('T')[0];
@@ -471,7 +482,7 @@ The Transform Function receives a record and massages it into shape.
       delete record['Amount'];
 
       // Change Name to payee; keep original Name as OrigName; delete Name
-      record.payee = record['Name'].toLowerCase();
+      record.payee = record['Name'].toLowerCase().trimRight();
       record.OrigPayee = record['Name'];
       delete record['Name'];
 
@@ -481,22 +492,22 @@ The Transform Function receives a record and massages it into shape.
       record.OrigMemo = record['Memo'];
       delete record['Memo'];
 
-      // Add new columns: check, txfr, _case, desc1, desc2
-      record.check = null;
-      record.txfr  = null;
-      record._case = null;
-      record.desc1 = null;
-      record.desc2 = null;
-
       // Add check no. to check column
       if (record.payee === CHECK) {
           const checkno = record.type.replace(/^0*/,'');
-          record.check = checkno;
-          record.type = DEBIT;
-          record.payee = UNKNOWN;
-          record.memo += `Purchase by check no. ${checkno}`;
-          record.desc1 = 'purchase';
-          record.desc2 = 'check';
+          record.check  = checkno;
+          record.type   = DEBIT;
+          record.payee  = UNKNOWN;
+          record.memo  += `Purchase by check no. ${checkno}`;
+          record.desc1  = 'purchase';
+          record.desc2  = 'check';
+      }
+
+      if (record.payee.match(/(returned) (item)/)) {
+          record.desc1 = RegExp.$2;
+          record.desc2 = RegExp.$1;
+          record.payee = USBANK;
+          record.memo = `${record.desc2} ${record.desc1}`;
       }
 
       if (record.payee.match(/(internet|mobile) (banking) transfer (deposit|withdrawal) (\d{4})\s*$/)) {
@@ -515,12 +526,14 @@ The Transform Function receives a record and massages it into shape.
           record.memo = `${record.desc2} ${record.desc1} ${record.memo}`.trimLeft();;
       }
 
-      if (record.payee.match(/(electronic) (withdrawal) |(web authorized) (pmt) |(atm|electronic) (deposit|withdrawal) /)) {
+      // web authorized payment
+      // atm|electronic|mobile check|rdc deposit|withdrawal <name>
+      if (record.payee.match(/(web authorized) (pmt) |(atm|electronic|mobile)?\s*(check|rdc)?\s*(deposit|withdrawal)\s*(.*)?/)) {
           tofrom = '';
-          record.desc1 = RegExp.$2 ? RegExp.$2 : RegExp.$4 ? RegExp.$4 : RegExp.$6;
-          record.desc2 = RegExp.$1 ? RegExp.$1 : RegExp.$3 ? RegExp.$3 : RegExp.$5;
-          if (RegExp.$5 === 'atm' || RegExp.$5 === 'electronic') {
-              record.payee = (RegExp.$6 === 'deposit') ? `usb_${options.csv[0]}` : CASH;
+          record.desc1 = RegExp.$2 ? RegExp.$2 : RegExp.$4 ? RegExp.$4 : RegExp.$5 ? RegExp.$5 : 'undefined';
+          record.desc2 = RegExp.$1 ? RegExp.$1 : RegExp.$3 ? RegExp.$3 : 'undefined';
+          if (RegExp.$3 === 'atm' || RegExp.$3 === 'electronic' || RegExp.$3 === 'mobile' || RegExp.$5 === DEPOSIT) {
+              record.payee = (RegExp.$5 === 'deposit') ? `usb_${options.csv[0]}` : CASH;
           } else {
               record.payee = record.payee.replace(RegExp.lastMatch,'');
           }
@@ -528,30 +541,60 @@ The Transform Function receives a record and massages it into shape.
               record.txfr = `< ${RegExp.lastMatch}`;
               tofrom = ' from';
           }
-          record.memo = `${record.desc2} ${record.desc1}${tofrom} ${record.memo}`;
+          record.memo = `${record.desc2} ${record.desc1}${tofrom} ${record.memo}`.trimRight();
       }
 
-      // if (record.payee.match(/\s*(portland|vancouver|seattle){2,}\s*(or|wa)\s*/)) {
-      //     record.payee.replace(RegExp.lastMatch, `${RegExp.$1} ${RegExp.$2}`);
-      //     record.memo.replace(RegExp.lastMatch, `${RegExp.$1} ${RegExp.$2}`);
-      // }
+      if (record.payee.match(/(zelle instant) (pmt) (from (\w+\s\w+))\s(.*)$/)) {
+          record.desc1 = RegExp.$2;
+          record.desc2 = RegExp.$1;
+          record.memo = `${record.desc2} ${record.desc1} ${RegExp.$3}`;
+          record.payee = `usb_${options.csv[0]}`;
+      }
+
+      if (record.payee.match(/(overdraft|international) (paid|processing) (fee)/)) {
+          record.desc1 = RegExp.$3;
+          record.desc2 = `${RegExp.$1} ${RegExp.$2}`;
+          record.payee = USBANK;
+          record.memo  = `${record.desc2} ${record.desc1} to ${record.payee}`;
+      }
+
       record.payee = record.payee.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
       record.memo  = record.memo.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
+      record.payee = record.payee.replace(/\s\d{3}\w+\s{2,}or$/,''); // Nike Company 019Beaverton   OR
+      record.memo  = record.memo.replace(/\s\d{3}\w+\s{2,}or$/,'');
       record.payee = record.payee.replace(/\s*[-\d]{5,}\s*\w{2}$/,''); // '650-4724100 CA' & '        855-576-4493WA' & '  800-3333330 MA'
       record.memo  = record.memo.replace(/\s*[-\d]{5,}\s*\w{2}$/,'');
       record.payee = record.payee.replace(/(\s\w*https)?www.*$/,''); // WWW.ATT.COM TX; UDEMY ONLINE COUHTTPSWWW.UDECA
       record.memo  = record.memo.replace(/(\s\w*https)?www.*$/,'');
       record.payee = record.payee.replace(/\s*\w+\.com\s+\w{2}$/, '');
       record.memo  = record.memo.replace( /\s*\w+\.com\s+\w{2}$/, '');
+      record.payee = record.payee.replace(/aws.amazon.cWA/i,''); // serviaws.amazon.cWA
+      record.memo  = record.memo.replace(/aws.amazon.cWA/i,'');
+      if (record.payee.match(/(bostype \/ wes bo)(hamilton\s+on)/)) { // WES BOHAMILTON    ON
+          record.payee = 'Wes Bos';
+          record.memo  = record.memo.replace(RegExp.$1,'Wes Bos');
+          record.memo  = record.memo.replace(RegExp.$2, '');
+      }
       record.payee = record.payee.replace(/\s{2,}/g,' ');
       record.memo  = record.memo.replace(/\s{2,}/g,' ');
+
+      /*
+        'DEBIT PURCHASE -VISA SQ *PHIL        877-417-4551WA'
+
+        You paid Phil $159 for Atreus keyboard kit and shipping
+
+        It is for a credit card processor that goes by the brand name
+        Square Up. Merchants can run credit card transactions through
+        their iPhone or iPads using the Square Up services. Mine was for
+        a taxi ride. https://800notes.com/Phone.aspx/1-877-417-4551
+      ,*/
+
+      record.payee = record.payee.replace(/sq/, 'square');
+      record.memo  = record.memo.replace(/sq/, 'square');
 
       return record;
   }
 #+end_src
-
-#+RESULTS: stream-transform-function
-: undefined
 
 *** Set Up the Stream Transform
 #+name:stream-transformer
