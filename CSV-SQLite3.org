@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-15 16:36
-#+macro: version Version 0.0.9
+#+date:2019-07-19 19:03
+#+macro: version Version 0.0.10
 
 * Introduction
 :PROPERTIES:
@@ -433,6 +433,90 @@ Node.js modules:
 
 5. saving the data in an SQLite database (using ~SQLite3~)
 
+** Set Up CSV-Stringify
+This section receives the transformed records from the Transform function and
+writes them to new csv files.  The new csv files will be located close to the
+database files, so there should be an environment variable named =WORKDB=,
+pointing to, for example, ~$WORK/workfin/db~.  A file will be called, for
+example, ~usb_6815__2016.csv~.  Notice that this file name uses two
+underscores, whereas the source files use two dashes; in all other respects,
+they are the same.
+
+#+name:csv-stringify-function
+#+begin_src js +n :tangle index.js
+  const csv = require('csv');
+  const stringifier = csv.stringify({
+      header: true,
+      columns: [
+          'date',
+          'type',
+          'check',
+          'txfr',
+          'payee',
+          'category',
+          'memo',
+          'desc1',
+          'desc2',
+          '_case',
+          'amount',
+          'OrigPayee',
+          'OrigMemo',
+          ],
+  });
+
+  const acct = options.csv[0],
+        year = options.csv[1];
+
+  const csv_file = `usb_${acct}__${year}.csv`;
+  const csv_path = `${process.env.WORKDB}/csv`;
+  const csv_path_file = `${csv_path}/${csv_file}`;
+  if (! fs.existsSync(csv_path)) {
+      try {
+          fs.mkdirSync(csv_path);
+          console.log(`CSV FILE PATH: ${csv_path} has been created`);
+      } catch (err) {
+          console.error(err.message);
+          process.exit(1);
+      }
+  }
+  console.log(`CSV FILE PATH: ${csv_path} exists`);
+
+  let csv_stringifier;
+  try {
+      csv_stringifier = fs.createWriteStream(csv_path_file);
+      console.log(`WRITE STREAM: ${csv_path_file} has been successfully opened.`);
+  } catch (err) {
+      console.error(err.message);
+      process.exit(1);
+  }
+
+  stringifier.on('readable', function() {
+      console.log('stringifier is now readable');
+      let row;
+      while (row = this.read()) {
+          console.log(`stringifer row: ${row}`);
+          csv_stringifier.write(row);
+      }
+  });
+
+  stringifier.on('error', function(err) {
+      console.error(err.message);
+  });
+
+  stringifier.on('finish', function() {
+      console.log('stringifier is done writing to csv_stringifer');
+      csv_stringifier.end('stringifer called csv_stringifier\'s "end" method');
+  });
+
+  stringifier.on('close', function() {
+      console.log('stringifier is now closed');
+  });
+
+  csv_stringifier.on('close', function() {
+      console.log('csv_stringifier is now closed');
+  });
+#+end_src
+
 ** Set Up Stream-Transform and Transform Function
 :PROPERTIES:
 :header-args: :comments both
@@ -608,7 +692,6 @@ records, for example.
 *** Set Up the Stream Transform
 #+name:stream-transformer
 #+begin_src js +n :tangle index.js
-  const csv = require('csv');
   const transformer = csv.transform(transform_function)
   const output = [];
 
@@ -617,6 +700,7 @@ records, for example.
       while ((record = transformer.read())) {
           console.log(`Transformer record:\n${util.inspect(record)}`);
           output.push(record);
+          stringifier.write(record);
       }
   });
 
@@ -629,7 +713,8 @@ records, for example.
   });
 
   transformer.on('end', function() {
-      console.log('Transformer done reading records.');
+      console.log('Transformer end reached.');
+      stringifier.end();
   });
 #+end_src
 
@@ -662,7 +747,6 @@ parser.on('readable', function() {
         transformer.write(record);
     }
 
-    transformer.end();
 });
 
 parser.on('error', function(err) {
@@ -675,6 +759,8 @@ parser.on('end', function() {
 
 parser.on('finish', function () {
     console.log('Parser finished writing records.');
+    console.log('Parser calling transformer end');
+    transformer.end();
 });
 #+end_src
 
