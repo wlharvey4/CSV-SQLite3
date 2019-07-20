@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-19 19:03
-#+macro: version Version 0.0.10
+#+date:2019-07-19 19:39
+#+macro: version Version 0.0.11
 
 * Introduction
 :PROPERTIES:
@@ -270,8 +270,14 @@ Node.js built-in modules:
 #+name:csv-sqlite3-dependencies
 #+header: :mkdirp yes
 #+begin_src js -n :tangle index.js
-const fs = require('fs');
+const fs   = require('fs');
 const util = require('util');
+
+const cl_args  = require('command-line-args');
+const cl_usage = require('command-line-usage');
+const csv      = require('csv');
+const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
+const accounting = require('accounting');
 #+end_src
 
 * Working with the Command Line
@@ -290,7 +296,6 @@ uses the [[option-defs-variable][~options_defs~]] object created in the code bel
 
 #+name:csv-sqlite3-usage
 #+begin_src js
-const cl_usage = require('command-line-usage');
 const sections = [
     {
         header: 'CSV-SQLite',
@@ -337,14 +342,13 @@ Also, identify the CSV file to transform via the =--csv= option:
 #+name:csv-sqlite3-command-line-arg-processing
 #+header: :noweb yes
 #+begin_src js +n :tangle index.js
-const cli_args = require('command-line-args');
 const option_defs = [
     { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
     { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
     { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file.' },
     { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
 ];
-const options = cli_args(option_defs);
+const options = cl_args(option_defs);
 console.log(options);
 
 if (options.help) {
@@ -402,7 +406,6 @@ performance.
   }
 
   /*--ATTACH--*/
-  const sqlite3 = require('sqlite3').verbose();      // remove 'verbose' in production
   const db = new sqlite3.Database(db_path, (err) => {
       if (err)
           console.error(`Error opening database file ${db_path}: ${err.message})`);
@@ -415,23 +418,32 @@ performance.
 :PROPERTIES:
 :header-args: :comments both
 :END:
-The Node.js module [[https://csv.js.org/][~csv~]] contains both a [[https://csv.js.org/parse/][csv parser]] and [[https://csv.js.org/transform/][stream transformer]].
-The pattern is to parse a CSV string into records and pipe those records
-through the transformer to be massaged into shape.  From there the new data is
-saved in an SQLite3 database using [[https://www.npmjs.com/package/sqlite3][~sqlite3~]] (see its [[https://github.com/mapbox/node-sqlite3/wiki/API][API]] also).
+The Node.js module [[https://csv.js.org/][~csv~]] contains the [[https://csv.js.org/parse/][csv parser]], [[https://csv.js.org/transform/][stream transformer]], and [[https://csv.js.org/stringify/][csv
+stringifier]], all of which will be used in this project.  The pattern is to open
+a CSV file, parse a CSV string into records and pipe those records through the
+transformer to be massaged into shape.  From there the new data is saved in
+another CSV file and also an SQLite3 database using [[https://www.npmjs.com/package/sqlite3][~sqlite3~]] (see its [[https://github.com/mapbox/node-sqlite3/wiki/API][API]]
+also).
 
 The processing of a CSV file, therefore, involves the following steps and
 Node.js modules:
 
-1. finding the correct CSV file (using ~FileSystem~)
+1. Find the correct CSV file (using ~FileSystem~) and open it as a [[https://nodejs.org/dist/latest-v12.x/docs/api/stream.html#stream_readable_streams][Readable
+   Stream]];
 
-2. reading the CSV records from the file as a string (using ~StreamReader~)
+2. Open a new CSV file to hold the new transformed data as a [[https://nodejs.org/dist/latest-v12.x/docs/api/stream.html#stream_writable_streams][Writable Stream]]
 
-3. parsing the string into CSV records (using ~CSV-Parse~)
+3. Open an SQLite3 database to hold the new transformed data
 
-4. transforming the CSV records into better data (using ~CSV-Transform~)
+4. Read the CSV records from the file as a string (using ~StreamReader~)
 
-5. saving the data in an SQLite database (using ~SQLite3~)
+5. Parse the string into JS records (using ~CSV-Parse~)
+
+6. Transform the JS records into usable data (using ~CSV-Transform~)
+
+7. Save the new data in the new CSV file (using ~StreamWriter~)
+
+8. Save the new data in an SQLite3 database (using ~SQLite3~)
 
 ** Set Up CSV-Stringify
 This section receives the transformed records from the Transform function and
@@ -444,7 +456,6 @@ they are the same.
 
 #+name:csv-stringify-function
 #+begin_src js +n :tangle index.js
-  const csv = require('csv');
   const stringifier = csv.stringify({
       header: true,
       columns: [
@@ -540,8 +551,6 @@ records, for example.
 
 #+name:stream-transform-function
 #+begin_src js +n :tangle index.js
-  const accounting = require('accounting');
-
   const transform_function = function (record) {
       const DEBIT   = 'debit';
       const CREDIT  = 'credit';
