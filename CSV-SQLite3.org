@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-20 18:03
-#+macro: version Version 0.0.12
+#+date:2019-07-22 19:42
+#+macro: version Version 0.0.13
 
 * Introduction
 :PROPERTIES:
@@ -91,19 +91,21 @@ The columns that should be created for the bank tables are:
 
 #+name: usb_table_schema
 #+begin_src sql
-    usb (\
-           rowid    INTEGER PRIMARY KEY NOT NULL,\
-           date     VARCHAR NOT NULL,\
-           trans    VARCHAR NOT NULL,\
-           checkno  VARCHAR,\
-           txfr     VARCHAR,\
-           payee    VARCHAR NOT NULL,\
-           category VARCHAR,\
-           memo     VARCHAR,\
-           desc1    VARCHAR,\
-           desc2    VARCHAR,\
-           caseno   VARCHAR,\
-           amount   REAL NOT NULL )
+  usb (
+         rowid    INTEGER PRIMARY KEY NOT NULL,
+         date     VARCHAR NOT NULL,
+         trans    VARCHAR NOT NULL,
+         checkno  VARCHAR,
+         txfr     VARCHAR,
+         payee    VARCHAR NOT NULL,
+         category VARCHAR,
+         memo     VARCHAR,
+         desc1    VARCHAR,
+         desc2    VARCHAR,
+         caseno   VARCHAR,
+         amount   REAL NOT NULL,
+         OrigPayee VARCHAR NOT NULL,
+         OrigMemo  VARCHAR NOT NULL )
 #+end_src
 
 * Create the Project
@@ -150,6 +152,30 @@ const cl_usage = require('command-line-usage');
 const csv      = require('csv');
 const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
 const accounting = require('accounting');
+#+end_src
+
+** Establish Database Table Name and Columns
+#+name:database-table-columns
+#+begin_src js +n :tangle index.js
+  const DB_TABLES = {
+      usb: 'usb',
+  };
+
+  const DB_COLS = [
+      'date',
+      'trans',
+      'checkno',
+      'txfr',
+      'payee',
+      'category',
+      'memo',
+      'desc1',
+      'desc2',
+      'caseno',
+      'amount',
+      'OrigPayee',
+      'OrigMemo',
+  ];
 #+end_src
 
 * Working with the Command Line
@@ -289,9 +315,12 @@ performance.
       else
           console.log(`Successfully attached to database file ${db_path}`);
   });
-  db.run("CREATE TABLE IF NOT EXISTS\
-      <<usb_table_schema>>"
-  );
+
+  db.serialize();
+
+  const sql = 'CREATE TABLE IF NOT EXISTS';
+  db.run(`${ sql }
+      <<usb_table_schema>>`);
 
 #+end_src
 
@@ -414,13 +443,31 @@ they are the same.
 :header-args: :comments both
 :END:
 This code implements the stream transformer functionality, which is at the
-heart of this project.  The stream transformer receives data via its ~write~
-method, executed in the parser for every CSV record in the file, in its
-~transform~ method, which contains a transform function as its first argument.
-This transform function argument performs the major work of manipulating each
-record.  After it transforms the data, the transformer receives the new data
-via a =readable= event, where it can process the data.  In this case, the data
-will be saved into the SQLite3 database.
+heart of this project.
+
+The Transformer is a [[https://nodejs.org/dist/latest-v12.x/docs/api/stream.html#stream_class_stream_transform][Node.js Transform Stream]].  This means it is capable of
+both reading and writing data.  In this project, it [[csv-transformer-write-method%0A][writes data]] in the CSV
+Parser, and then reads it here via its ~transformer.read()~ method.  This
+~transformer~ object has a ~transform()~ method that takes a function callback,
+whose purpose is to to /transform/ records that are read.  This is the heart of
+this project.  The ~transform()~ function is implemented in the following
+section, and returns completely transformed CSV bank records at its end.  These
+transformed records are then written to both a new CSV file, and the SQLite3
+database.
+
+#+attr_texinfo: :options CSV transform ( transform_callback )
+#+begin_defmethod
+The CSV ~transform~ method reads a record and sends that record to a
+=TRANSFORM_CALLBACK= that is used to /transform/ the data.
+#+end_defmethod
+
+After it transforms the data, the transformer receives the new data via a
+=readable= event, where it can process the data.
+
+#+cindex:@code{INSERT} into @file{db}
+#+cindex:@command{db.run}
+The transformed data will also be saved into the SQLite3 database via an
+=INSERT= statement executed by the ~db.run()~ method.
 
 *** Set Up the Transform Function
 The Transform Function receives a record and massages it into shape.  The
@@ -435,7 +482,7 @@ records, for example.
   const transform_function = function (record) {
       const DEBIT   = 'debit';
       const CREDIT  = 'credit';
-      const CHECK   = 'checkno';
+      const CHECK   = 'check';
       const CASH    = 'cash';
       const DEPOSIT = 'deposit';
       const UNKNOWN = 'unknown';
@@ -445,7 +492,7 @@ records, for example.
 
       // Add new columns: checkno, txfr, acct, _case, desc1, desc2, category
       record.checkno = null; // check no.
-      record.trans    = null; // direction and acct #
+      record.txfr    = null; // direction and acct #
       record.acct    = null; // related account foreign key
       record.caseno  = null; // related case foreign key
       record.desc1   = null; // noun
@@ -496,7 +543,7 @@ records, for example.
       if (record.payee.match(/(internet|mobile) (banking) transfer (deposit|withdrawal) (\d{4})\s*$/)) {
           record.desc1 = RegExp.$3;
           record.desc2 = RegExp.$1;
-          record.trans = `${(RegExp.$3 === 'deposit') ? '<' : '>'} usb_${RegExp.$4}`;
+          record.txfr = `${(RegExp.$3 === 'deposit') ? '<' : '>'} usb_${RegExp.$4}`;
           tofrom = (record.trans === 'debit') ? 'to' : 'from';
           record.payee = (record.trans === 'debit') ? `usb_${RegExp.$4}` : `usb_${options.csv[0]}`;
           record.memo = `${record.desc2} ${record.desc1}: ${TRANS} ${tofrom} ${record.memo}`;
@@ -521,7 +568,7 @@ records, for example.
               record.payee = record.payee.replace(RegExp.lastMatch,'');
           }
           if (record.memo.match(/paypal/) && record.trans === CREDIT) {
-              record.trans = `< ${RegExp.lastMatch}`;
+              record.txfr = `< ${RegExp.lastMatch}`;
               tofrom = ' from';
           }
           record.memo = `${record.desc2} ${record.desc1}${tofrom} ${record.memo}`.trimRight();
@@ -587,14 +634,41 @@ records, for example.
 #+begin_src js +n :tangle index.js
   const transformer = csv.transform(transform_function)
 
+  /* TRANSFORMER reads records through its TRANSFORM_FUNCTION */
+  /* -------------------------------------------------------- */
   transformer.on('readable', function() {
       let record;
       while ((record = transformer.read())) {
           console.log(`Transformer record:\n${util.inspect(record)}`);
 
-
+          /* STRINGIFIER WRITE Records */
+          /* ------------------------- */
           stringifier.write(record);
-      }
+
+
+
+          /* DB RUN---INSERT RECORDS */
+          /* ----------------------- */
+          const tab_name  = DB_TABLES['usb'];
+          const col_names = DB_COLS.join(',');
+          const col_phs   = DB_COLS.map(c => '?').join(',');
+          const col_values= DB_COLS.map(c => record[c]);
+
+          let sql = `INSERT INTO ${ tab_name }( ${ col_names } )
+                     VALUES ( ${ col_phs } )`
+
+          console.log(`sql: ${ sql }`);
+          console.log(`col_values: ${ col_values }`);
+
+          db.run(sql, col_values, (err) => {
+             if (err) {
+                 console.error(err.message);
+                 console.error(`ERROR sql: ${ sql }`);
+                 console.error(`ERROR values: ${ col_values }`);
+                 process.exit(1);
+             }
+         });
+     }
   });
 
   transformer.on('error', function(err) {
@@ -623,6 +697,7 @@ a list of column headings, and produce an array of objects where the keys are
 column names, and the values are column entries.  Each record is written to the
 stream transformer using its =WRITE= method.
 
+<<csv-transformer-write-method>>
 #+name:csv-sqlite3-csv-parse
 #+header: :noweb yes
 #+header: :comments link
@@ -719,10 +794,169 @@ and the user has proper permissions to read it before proceeding.
 
 * Create Tables
 
+* Node-SQLite3 Module
+:PROPERTIES:
+:appendix: true
+:END:
+Asynchronous, non-blocking SQLite3 bindings for Node.js.
+
+- [[https://github.com/mapbox/node-sqlite3][Github]]
+
+- [[https://github.com/mapbox/node-sqlite3/wiki/API][Wiki API]]
+
+** Node-SQLite3 Module Usage
+#+name:node-sqlite3-module-sample-usage
+#+begin_src js -n
+var sqlite3 = require('sqlite3').verbose();
+var db = new sqlite3.Database(':memory:');
+
+db.serialize(function() {
+  db.run("CREATE TABLE lorem (info TEXT)");
+
+  var stmt = db.prepare("INSERT INTO lorem VALUES (?)");
+  for (var i = 0; i < 10; i++) {
+      stmt.run("Ipsum " + i);
+  }
+  stmt.finalize();
+
+  db.each("SELECT rowid AS id, info FROM lorem", function(err, row) {
+      console.log(row.id + ": " + row.info);
+  });
+});
+
+db.close();
+#+end_src
+
+** Features
+- Straightforward query and parameter binding interface
+- Full Buffer/Blob support
+- Extensive debugging support
+  #+cindex:serialization
+- Query serialization API
+- Extension support
+- Big test suite
+- Written in modern C++ and tested for memory leaks
+- Bundles Sqlite3 3.26.0 as a fallback if the installing system doesn't include
+  SQLite
+
+** Node-SQLite3 API
+#+cindex:serialization, function call
+~node-sqlite3~ has built-in /function call serialization/ and automatically waits
+before executing a blocking action until no other action is pending.  This
+means that it's safe to start calling functions on the database object even if
+it is not yet fully opened.  The ~Database#close()~ function will wait until
+all pending queries are completed before closing the database.
+
+** Node-SQLite3 Control Flow---Two Exeuction Modes
+#+cindex:execution flow
+#+cindex:parallel execution
+#+cindex:exclusive mode
+~node-sqlite3~ provides two functions to help control the execution flow of
+statements.  The default mode is to execute statements in /parallel/.  However,
+the ~Database#close~ method will always run in /exclusive mode/, meaning it
+waits until all previous queries have completed and ~node-sqlite3~ will not run
+any other queries while a ~close~ is pending.
+
+*** Serialize Execution Mode
+#+cindex:execution mode, serialize
+#+cindex:serialize execution mode
+#+cindex:serialized mode
+
+#+attr_texinfo: :options Database serialize ( [callback] )
+#+begin_defmethod
+Puts the /execution mode/ into /serialized mode/.  This means that at most one
+statement object can execute a query at a time.  Other statements wait in a
+queue until the previous statements are executed.
+
+If a callback is provided, it will be called immediately.  All database queries
+scheduled in that callback will be serialized.  After the function returns, the
+database is set back to its original mode again.
+#+end_defmethod
+
+Calling ~Database#serialize()~ within nested functions is safe:
+
+#+name:node-sqlite-3-serialized-mode-example
+#+begin_src js -n
+  // Queries scheduled here will run in parallel.
+
+  db.serialize(function() {
+
+      // Queries scheduled here will be serialized.
+      db.serialize(function() {
+          // Queries scheduled here will still be serialized.
+      });
+      // Queries scheduled here will still be serialized.
+  });
+
+  // Queries scheduled here will run in parallel again.
+
+#+end_src
+
+Note that queries scheduled not directly in the callback function are not
+necessarily serialized:
+
+#+begin_src js -n
+  db.serialize(function() {
+
+      // These two queries will run sequentially.
+      db.run("CREATE TABLE foo (num)");
+      db.run("INSERT INTO foo VALUES (?)", 1, function() {
+
+          // These queries will run in parallel and the second query will probably
+          // fail because the table might not exist yet.
+          db.run("CREATE TABLE bar (num)");
+          db.run("INSERT INTO bar VALUES (?)", 1);
+      });
+  });
+#+end_src
+
+#+cindex:sticky execution mode
+#+cindex:execution mode, sticky
+If you call it without a function parameter, the execution mode setting is
+sticky and won't change until the next call to ~Database#parallelize~.
+
+*** Parallelize Execution Mode
+#+cindex:parallized exeuction mode
+#+cindex:execution mode, parallelized
+
+#+attr_texinfo: :options Database parallelize ( [callback] )
+#+begin_defmethod
+Puts the execution mode into parallelized.  This means that queries scheduled
+will be run in parallel.
+
+If a callback is provided, it will be called immediately.  All database queries
+scheduled in that callback will run parallelized.  After the function returns,
+the database is set back to its original mode again.
+#+end_defmethod
+
+Calling ~Database#parallelize()~ within nested functions is safe:
+
+#+begin_src js -n
+  db.serialize(function() {
+
+      // Queries scheduled here will be serialized.
+      db.parallelize(function() {
+
+          // Queries scheduled here will run in parallel.
+      });
+
+      // Queries scheduled here will be serialized again.
+  });
+#+end_src
+
+If you call it without a function parameter, the execution mode setting is
+sticky and won't change until the next call to ~Database#serialize~.
+
 * Index
 :PROPERTIES:
 :unnumbered: t
 :index:    cp
+:END:
+
+* Function Index
+:PROPERTIES:
+:index:    fn
+:unnumbered: true
 :END:
 
 * Macro Definitions                                                :noexport:
