@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-22 19:42
-#+macro: version Version 0.0.13
+#+date:2019-07-28 12:24
+#+macro: version Version 0.0.14
 
 * Introduction
 :PROPERTIES:
@@ -27,6 +27,10 @@ A sample date is:
 
 : 1/4/2016
 
+This should be transformed into:
+
+: 2016-01-14
+
 {{{subheading(Transaction)}}}
 
 A =Transaction= is one of
@@ -34,11 +38,19 @@ A =Transaction= is one of
 - =DEBIT=
 - =CREDIT=
 
+This should be transformed into:
+
+: debit | credit
+
 {{{subheading(Name)}}}
 
 A sample =name= entry is:
 
 : DEBIT PURCHASE -VISA USPS PO BOXES 66800-3447779 DC
+
+This should be transformed into:
+
+: visa purchase usps po boxes
 
 {{{subheading(Memo)}}}
 
@@ -46,15 +58,22 @@ A sample =memo= entry is:
 
 : Download from usbank.com. USPS PO BOXES 66800-3447779 DC
 
+The =Download from usbank.com= should be removed in all cases.  The extraneous
+numbers should be removed whenever possible.
+
 {{{subheading(Amount)}}}
 
 - -66.0000
+
+This should be transformed into:
+
+: $-66.00
 
 * SQLite Tables
 #+cindex:tables
 The minimum SQLite tables that should be created are:
 
-- usb :: business (6815), trust (6831), personal (6151)
+- usb :: includes business (6815), trust (6831), personal (6151) data
 - cases :: 190301, etc.
 - people :: John Doe, Mary Jane, etc.
 - businesses :: Law Office of ..., etc.
@@ -108,6 +127,24 @@ The columns that should be created for the bank tables are:
          OrigMemo  VARCHAR NOT NULL )
 #+end_src
 
+* CSV-SQLite3 Usage
+- ~csv-sqlite3 --csv 6815|6831|6151 2016|2017|2018 --sqlite workfin~ ::
+
+     Transform downloaded data and save in a new CSV file and a new sqlite3
+     database.  The source CSV files are found at:
+
+  - ~$WORKFIN/sources/usb/usb_{6815|6831|6151}/{2016|2017|2018}/usb_6815--2016.csv~
+
+  The transformed CSV files are found at:
+
+  - ~$WORKFIN/db/csv/usb_{6815|6831|6151}__{2016|2017|2018}.csv~
+
+  The new SQLite3 database is found at:
+
+  - ~$WORKFIN/db/workfin/sqlite~
+
+- ~csv-sqlite3~
+
 * Create the Project
 This project's dependencies are the following Node.js modules:
 
@@ -123,6 +160,15 @@ This project's dependencies are the following Node.js modules:
 #+end_src
 
 ** Install the Dependencies
+The following Node dependency modules are installed:
+
+- ~command-line-ars~
+- ~command-line-usage~
+- ~csv~
+- ~sqlite3~
+- ~accounting~
+
+
 #+name:create-CSV-SQLite3-project
 #+header: :exports both :results output
 #+begin_src sh
