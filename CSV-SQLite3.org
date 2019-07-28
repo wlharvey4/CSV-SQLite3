@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-28 12:24
-#+macro: version Version 0.0.14
+#+date:2019-07-28 13:07
+#+macro: version Version 0.0.15
 
 * Introduction
 :PROPERTIES:
@@ -331,7 +331,7 @@ performance.
 #+begin_src js +n :tangle index.js
 
   if ( !process.env.WORKDB ) {
-      console.error('You must define a shell variable named WORKFDB as a base directory for the database file.');
+      console.error('You must define a shell variable named WORKDB as a base directory for the database file.');
       process.exit(1);
   }
 
@@ -374,12 +374,22 @@ performance.
 :PROPERTIES:
 :header-args: :comments both
 :END:
-The Node.js module [[https://csv.js.org/][~csv~]] contains the [[https://csv.js.org/parse/][csv parser]], [[https://csv.js.org/transform/][stream transformer]], and [[https://csv.js.org/stringify/][csv
-stringifier]], all of which will be used in this project.  The pattern is to open
-a CSV file, parse a CSV string into records and pipe those records through the
-transformer to be massaged into shape.  From there the new data is saved in
-another CSV file and also an SQLite3 database using [[https://www.npmjs.com/package/sqlite3][~sqlite3~]] (see its [[https://github.com/mapbox/node-sqlite3/wiki/API][API]]
-also).
+The Node.js module [[https://csv.js.org/][~csv~]] contains the
+
+- [[https://csv.js.org/parse/][csv-parser]],
+
+- [[https://csv.js.org/transform/][csv-stream-transformer]],
+
+- [[https://csv.js.org/stringify/][csv-stringifier]],
+
+
+{{{noindent}}} all of which will be used in this project.  The pattern is to
+open a CSV file, parse a CSV string into records and pipe those records through
+the transformer to be massaged into shape.  From there the new data is saved in
+another CSV file and also an SQLite3 database using
+
+-  [[https://www.npmjs.com/package/sqlite3][~sqlite3~]] (see its [[https://github.com/mapbox/node-sqlite3/wiki/API][API]] also)
+
 
 The processing of a CSV file, therefore, involves the following steps and
 Node.js modules:
@@ -387,19 +397,37 @@ Node.js modules:
 1. Find the correct CSV file (using ~FileSystem~) and open it as a [[https://nodejs.org/dist/latest-v12.x/docs/api/stream.html#stream_readable_streams][Readable
    Stream]];
 
+  - [[*Set Up StreamReader][Set Up StreamReader]]
+
 2. Open a new CSV file to hold the new transformed data as a [[https://nodejs.org/dist/latest-v12.x/docs/api/stream.html#stream_writable_streams][Writable Stream]]
+
+   - [[*Set Up CSV-Stringify][Set Up CSV-Stringify]]
 
 3. Open an SQLite3 database to hold the new transformed data
 
+   - [[*Attach To or Delete a Database][Attach To or Delete a Database]]
+
 4. Read the CSV records from the file as a string (using ~StreamReader~)
+
+   - [[*Set Up StreamReader][Set Up StreamReader]]
 
 5. Parse the string into JS records (using ~CSV-Parse~)
 
+   - [[*Set Up CSV-Parse][Set Up CSV-Parse]]
+
 6. Transform the JS records into usable data (using ~CSV-Transform~)
+
+   - [[*Set Up the Stream Transform][Set Up the Stream Transform]]
+
+   - [[*Set Up the Transform Function][Set Up the Transform Function]]
 
 7. Save the new data in the new CSV file (using ~StreamWriter~)
 
+   - [[*Set Up CSV-Stringify][Set Up CSV-Stringify]]
+
 8. Save the new data in an SQLite3 database (using ~SQLite3~)
+
+   - [[*Set Up the Stream Transform][Set Up the Stream Transform]]
 
 ** Set Up CSV-Stringify
 This section receives the transformed records from the Transform function and
@@ -1008,6 +1036,7 @@ sticky and won't change until the next call to ~Database#serialize~.
 * Macro Definitions                                                :noexport:
 #+macro: heading @@texinfo:@heading @@$1
 #+macro: subheading @@texinfo:@subheading @@$1
+#+macro: noindent @@texinfo:@noindent @@
 
 * Export Settings                                                  :noexport:
 #+texinfo_filename:csv-sqlite3.info
