@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-28 13:07
-#+macro: version Version 0.0.15
+#+date:2019-07-28 15:24
+#+macro: version Version 0.0.16
 
 * Introduction
 :PROPERTIES:
@@ -128,7 +128,7 @@ The columns that should be created for the bank tables are:
 #+end_src
 
 * CSV-SQLite3 Usage
-- ~csv-sqlite3 --csv 6815|6831|6151 2016|2017|2018 --sqlite workfin~ ::
+- ~csv-sqlite3 --csv 6815|6831|6151 2016|2017|2018 --attach workfin~ ::
 
      Transform downloaded data and save in a new CSV file and a new sqlite3
      database.  The source CSV files are found at:
@@ -142,6 +142,10 @@ The columns that should be created for the bank tables are:
   The new SQLite3 database is found at:
 
   - ~$WORKFIN/db/workfin/sqlite~
+
+- ~csv-sqlite3 --delete workfin~ ::
+
+     Delete the SQLite3 database file ~workfin.sqlite~
 
 - ~csv-sqlite3~
 
@@ -289,7 +293,7 @@ Also, identify the CSV file to transform via the =--csv= option:
 const option_defs = [
     { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
     { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
-    { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file.' },
+    { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file and related CSV files.' },
     { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
 ];
 const options = cl_args(option_defs);
@@ -336,21 +340,51 @@ performance.
   }
 
   const WORKDB = process.env.WORKDB; // base directory for db
-  const DB_DEFAULT = 'workfin.sqlite';
+  const DB_DEFAULT = 'workfin';
   const db_file = options.attach ? options.attach :    // for attaching
                   options.delete ? options.delete :    // for deletion
                   DB_DEFAULT;  	       	         // use the default name
-  const db_path = `${WORKDB}/${db_file}`;
+  const db_path = `${WORKDB}/${db_file}.sqlite`;
 
   /*---DELETE--*/
-  if (options.delete) {
+  if (options.hasOwnProperty('delete')) {
       if (!process.env.WORKBAK) {
           console.error('You must define a shell variable named WORKBAK as a backup directory before deleting a database file.');
           process.exit(1);
       }
-      const db_path_bak = `${process.env.WORKBAK}/${db_file}.${Date.now()}`;
-      fs.renameSync(db_path, db_path_bak);
-      console.error(`Successfully deleted ${db_path};\nThis file has been backed up to ${db_path_bak}`);
+      const WORKBAK = process.env.WORKBAK;
+
+      /* DB */
+      const db_path_bak = `${WORKBAK}/${db_file}.sqlite.${Date.now()}`;
+      try {
+          fs.renameSync(db_path, db_path_bak);
+          console.error(`Renamed ${db_path} to ${db_path_bak}`);
+      } catch (err) {
+          if (err.code === 'ENOENT')
+              console.log(`file ${db_path} did not exist; ignoring.`);
+          else {
+              throw err;
+          }
+      }
+
+      /* CSV */
+      const db_csv_path = `${WORKDB}/csv`;
+      try {
+          const files = fs.readdirSync(db_csv_path);
+          files.forEach(file => {
+              const db_csv_path_file = `${WORKDB}/csv/${file}`;
+              const db_csv_path_bak  = `${WORKBAK}/${file}.${Date.now()}`;
+              fs.renameSync(db_csv_path_file, db_csv_path_bak);
+              console.log(`Renamed ${db_csv_path_file} to ${db_csv_path_bak}`);
+          });
+      } catch (err) {
+          if (err.code === 'ENOENT') {
+              console.log(`${db_csv_path} probably does not exist`);
+          } else {
+              throw err;
+          }
+      }
+
       process.exit(0);
   }
 
