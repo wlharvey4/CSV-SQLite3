@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-28 19:34
-#+macro: version Version 0.0.17
+#+date:2019-07-28 20:52
+#+macro: version Version 0.0.18
 
 * Introduction
 :PROPERTIES:
@@ -118,7 +118,7 @@ The columns that should be created for the bank tables are:
          txfr     VARCHAR,
          payee    VARCHAR NOT NULL,
          category VARCHAR,
-         memo     VARCHAR,
+         note     VARCHAR,
          desc1    VARCHAR,
          desc2    VARCHAR,
          caseno   VARCHAR,
@@ -227,7 +227,7 @@ const accounting = require('accounting');
       'txfr',
       'payee',
       'category',
-      'memo',
+      'note',
       'desc1',
       'desc2',
       'caseno',
@@ -462,7 +462,7 @@ upon opening it for writing.  The program will halt after the export.
               '-header',
               '-csv',
               db_path,
-              'SELECT rowid,date,trans,checkno,txfr,payee,category,memo,desc1,desc2,caseno,amount FROM usb;'
+              'SELECT rowid,date,trans,checkno,txfr,payee,category,note,caseno,amount FROM usb;'
           ],
           {
               encoding: 'utf-8',
@@ -563,7 +563,7 @@ they are the same.
           'txfr',
           'payee',
           'category',
-          'memo',
+          'note',
           'desc1',
           'desc2',
           'caseno',
@@ -704,9 +704,9 @@ records, for example.
       record.OrigPayee = record['Name'];
       delete record['Name'];
 
-      // Clean up Memo by removing Download message; return as memo; keep Memo as OrigMemo
+      // Clean up Memo by removing Download message; return as note; keep Memo as OrigMemo
       let re = new RegExp('Download from usbank.com.\\s*');
-      record.memo = record['Memo'].replace(re,'').toLowerCase();
+      record.note = record['Memo'].replace(re,'').toLowerCase();
       record.OrigMemo = record['Memo'];
       delete record['Memo'];
 
@@ -716,7 +716,7 @@ records, for example.
           record.checkno  = checkno;
           record.trans   = DEBIT;
           record.payee  = UNKNOWN;
-          record.memo  += `Purchase by check no. ${checkno}`;
+          record.note  += `Purchase by check no. ${checkno}`;
           record.desc1  = 'purchase';
           record.desc2  = 'check';
       }
@@ -725,7 +725,7 @@ records, for example.
           record.desc1 = RegExp.$2;
           record.desc2 = RegExp.$1;
           record.payee = USBANK;
-          record.memo = `${record.desc2} ${record.desc1}`;
+          record.note = `${record.desc2} ${record.desc1}`;
       }
 
       if (record.payee.match(/(internet|mobile) (banking) transfer (deposit|withdrawal) (\d{4})\s*$/)) {
@@ -734,14 +734,14 @@ records, for example.
           record.txfr = `${(RegExp.$3 === 'deposit') ? '<' : '>'} usb_${RegExp.$4}`;
           tofrom = (record.trans === 'debit') ? 'to' : 'from';
           record.payee = (record.trans === 'debit') ? `usb_${RegExp.$4}` : `usb_${options.csv[0]}`;
-          record.memo = `${record.desc2} ${record.desc1}: ${TRANS} ${tofrom} ${record.memo}`;
+          record.note = `${record.desc2} ${record.desc1}: ${TRANS} ${tofrom} ${record.note}`;
       }
 
       if (record.payee.match(/debit (purchase)\s*-?\s*(visa)? /)) {
           record.desc1 = RegExp.$1;
           record.desc2 = RegExp.$2;
           record.payee = record.payee.replace(RegExp.lastMatch,'');
-          record.memo = `${record.desc2} ${record.desc1} ${record.memo}`.trimLeft();;
+          record.note = `${record.desc2} ${record.desc1} ${record.note}`.trimLeft();;
       }
 
       // web authorized payment
@@ -755,17 +755,17 @@ records, for example.
           } else {
               record.payee = record.payee.replace(RegExp.lastMatch,'');
           }
-          if (record.memo.match(/paypal/) && record.trans === CREDIT) {
+          if (record.note.match(/paypal/) && record.trans === CREDIT) {
               record.txfr = `< ${RegExp.lastMatch}`;
               tofrom = ' from';
           }
-          record.memo = `${record.desc2} ${record.desc1}${tofrom} ${record.memo}`.trimRight();
+          record.note = `${record.desc2} ${record.desc1}${tofrom} ${record.note}`.trimRight();
       }
 
       if (record.payee.match(/(zelle instant) (pmt) (from (\w+\s\w+))\s(.*)$/)) {
           record.desc1 = RegExp.$2;
           record.desc2 = RegExp.$1;
-          record.memo = `${record.desc2} ${record.desc1} ${RegExp.$3}`;
+          record.note = `${record.desc2} ${record.desc1} ${RegExp.$3}`;
           record.payee = `usb_${options.csv[0]}`;
       }
 
@@ -773,28 +773,28 @@ records, for example.
           record.desc1 = RegExp.$3;
           record.desc2 = `${RegExp.$1} ${RegExp.$2}`;
           record.payee = USBANK;
-          record.memo  = `${record.desc2} ${record.desc1} to ${record.payee}`;
+          record.note  = `${record.desc2} ${record.desc1} to ${record.payee}`;
       }
 
       record.payee = record.payee.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
-      record.memo  = record.memo.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
+      record.note  = record.note.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
       record.payee = record.payee.replace(/\s\d{3}\w+\s{2,}or$/,''); // Nike Company 019Beaverton   OR
-      record.memo  = record.memo.replace(/\s\d{3}\w+\s{2,}or$/,'');
+      record.note  = record.note.replace(/\s\d{3}\w+\s{2,}or$/,'');
       record.payee = record.payee.replace(/\s*[-\d]{5,}\s*\w{2}$/,''); // '650-4724100 CA' & '        855-576-4493WA' & '  800-3333330 MA'
-      record.memo  = record.memo.replace(/\s*[-\d]{5,}\s*\w{2}$/,'');
+      record.note  = record.note.replace(/\s*[-\d]{5,}\s*\w{2}$/,'');
       record.payee = record.payee.replace(/(\s\w*https)?www.*$/,''); // WWW.ATT.COM TX; UDEMY ONLINE COUHTTPSWWW.UDECA
-      record.memo  = record.memo.replace(/(\s\w*https)?www.*$/,'');
+      record.note  = record.note.replace(/(\s\w*https)?www.*$/,'');
       record.payee = record.payee.replace(/\s*\w+\.com\s+\w{2}$/, '');
-      record.memo  = record.memo.replace( /\s*\w+\.com\s+\w{2}$/, '');
+      record.note  = record.note.replace( /\s*\w+\.com\s+\w{2}$/, '');
       record.payee = record.payee.replace(/aws.amazon.cWA/i,''); // serviaws.amazon.cWA
-      record.memo  = record.memo.replace(/aws.amazon.cWA/i,'');
+      record.note  = record.note.replace(/aws.amazon.cWA/i,'');
       if (record.payee.match(/(bostype \/ wes bo)(hamilton\s+on)/)) { // WES BOHAMILTON    ON
           record.payee = 'Wes Bos';
-          record.memo  = record.memo.replace(RegExp.$1,'Wes Bos');
-          record.memo  = record.memo.replace(RegExp.$2, '');
+          record.note  = record.note.replace(RegExp.$1,'Wes Bos');
+          record.note  = record.note.replace(RegExp.$2, '');
       }
       record.payee = record.payee.replace(/\s{2,}/g,' ');
-      record.memo  = record.memo.replace(/\s{2,}/g,' ');
+      record.note  = record.note.replace(/\s{2,}/g,' ');
 
       /*
         'DEBIT PURCHASE -VISA SQ *PHIL        877-417-4551WA'
@@ -808,7 +808,7 @@ records, for example.
       ,*/
 
       record.payee = record.payee.replace(/sq/, 'square');
-      record.memo  = record.memo.replace(/sq/, 'square');
+      record.note  = record.note.replace(/sq/, 'square');
 
       return record;
   }
