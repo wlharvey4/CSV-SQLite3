@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-28 15:24
-#+macro: version Version 0.0.16
+#+date:2019-07-28 19:34
+#+macro: version Version 0.0.17
 
 * Introduction
 :PROPERTIES:
@@ -128,26 +128,35 @@ The columns that should be created for the bank tables are:
 #+end_src
 
 * CSV-SQLite3 Usage
-- ~csv-sqlite3 --csv 6815|6831|6151 2016|2017|2018 --attach workfin~ ::
+- ~csv-sqlite3 --csv <usb-acct> <year> [--attach <db>]
 
-     Transform downloaded data and save in a new CSV file and a new sqlite3
-     database.  The source CSV files are found at:
+  - <usb-acct> is one of: =6815|6831|6151= 
 
-  - ~$WORKFIN/sources/usb/usb_{6815|6831|6151}/{2016|2017|2018}/usb_6815--2016.csv~
+  - <year> is one of =2016|2017|2018= 
 
-  The transformed CSV files are found at:
+  - ~--attach <db>~ is optional; the default is ~workfin.sqlite~
 
-  - ~$WORKFIN/db/csv/usb_{6815|6831|6151}__{2016|2017|2018}.csv~
+  - Transform downloaded data and save in a new CSV file and a new sqlite3
+    database.  The source CSV files are found at:
 
-  The new SQLite3 database is found at:
+    ~$WORKFIN/sources/usb/usb_{6815|6831|6151}/{2016|2017|2018}/usb_6815--2016.csv~
 
-  - ~$WORKFIN/db/workfin/sqlite~
+  - The transformed CSV files are found at:
 
-- ~csv-sqlite3 --delete workfin~ ::
+    ~$WORKFIN/db/csv/usb_{6815|6831|6151}__{2016|2017|2018}.csv~
 
-     Delete the SQLite3 database file ~workfin.sqlite~
+  - The new SQLite3 database is found at:
 
-- ~csv-sqlite3~
+    ~$WORKFIN/db/workfin/sqlite~
+
+- ~csv-sqlite3 --delete [<db>]~ ::
+
+     Delete the SQLite3 database file ~<db>.sqlite~, or ~workfin.sqlite~ if left
+     blank.
+
+- ~csv-sqlite3 --log-level <level>~
+
+  Set a log level (default is =warn=)
 
 * Create the Project
 This project's dependencies are the following Node.js modules:
@@ -290,19 +299,31 @@ Also, identify the CSV file to transform via the =--csv= option:
 #+name:csv-sqlite3-command-line-arg-processing
 #+header: :noweb yes
 #+begin_src js +n :tangle index.js
-const option_defs = [
-    { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
-    { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
-    { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file and related CSV files.' },
-    { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
-];
-const options = cl_args(option_defs);
-console.log(options);
+  const option_defs = [
+      { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
+      { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
+      { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file and related CSV files.' },
+      { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
+      { name: 'export', alias: 'e', type: String,  description: 'Export sqlite3 data into a csv file (default \'workfin.csv\'' },
+      { name: 'log-level', alias: 'l', type: Number, description: 'Set a log level 0..10' },
+  ];
+  const options = cl_args(option_defs);
+  console.log(options);
 
-if (options.help) {
-    <<csv-sqlite3-usage>>
-    process.exit(0);
-}
+  if (options.help) {
+      <<csv-sqlite3-usage>>
+      process.exit(0);
+  }
+
+  let LOG_LEVEL = process.env.LOG_LEVEL || 1;
+  if (options['log-level'] >= 0) {
+      if (typeof options['log-level'] === 'number' && options['log-level'] <= 10)
+          LOG_LEVEL = options['log-level'];
+      else {
+          console.error(`Incorrect log-level: ${options['log-level']}; must be between 0 and 10`);
+      }
+  }
+  console.log(`Log-level set at: ${LOG_LEVEL}`);
 #+end_src
 
 * Attach To or Delete a Database
@@ -345,6 +366,7 @@ performance.
                   options.delete ? options.delete :    // for deletion
                   DB_DEFAULT;  	       	         // use the default name
   const db_path = `${WORKDB}/${db_file}.sqlite`;
+  console.log(`db_path: ${db_path}`);
 
   /*---DELETE--*/
   if (options.hasOwnProperty('delete')) {
@@ -389,19 +411,77 @@ performance.
   }
 
   /*--ATTACH--*/
+  // attach in all situations except --delete
+  console.log('attaching...');
   const db = new sqlite3.Database(db_path, (err) => {
       if (err)
           console.error(`Error opening database file ${db_path}: ${err.message})`);
       else
           console.log(`Successfully attached to database file ${db_path}`);
   });
+  console.log('done');
 
   db.serialize();
 
-  const sql = 'CREATE TABLE IF NOT EXISTS';
-  db.run(`${ sql }
+  db.run(`CREATE TABLE IF NOT EXISTS
       <<usb_table_schema>>`);
+#+end_src
 
+* Export SQLite DB Data to CSV File
+To export the SQLite3 database data to a CSV file, use the
+{{{option(--export)}}} option:
+
+: --export [<csv-file>]
+
+The csv filename is optional, with the default being the same as the db file
+(i.e., ~workfin~), with the extension ~.csv~, (i.e., ~workfin.csv~) in the
+~WORKDB~ directory.  The export is accomplished by executing in a child process
+the command line program:
+
+: sqlite3 -header -csv db sql-statements
+
+The process runs the command, and connects the =STDOUT= stream to the CSV file.
+Since the entire database is exported, the output will truncate the csv file
+upon opening it for writing.  The program will halt after the export.
+
+#+name:csv-sqlite3-export-option
+#+begin_src js +n :tangle index.js
+
+  /*--EXPORT--*/
+  if (options.hasOwnProperty('export')) {
+      const { spawnSync } = require('child_process');
+      const export_csv = options['export'] === null ? db_file : options['export'];
+      console.log(`exporting to ${export_csv}...`);
+
+      /*--TRUCATE export_csv UPON OPENING FOR WRITING--*/
+      const fd = fs.openSync(`${WORKDB}/${export_csv}.csv`,'w');
+
+      const ret = spawnSync(
+          'sqlite3',
+          [
+              '-header',
+              '-csv',
+              db_path,
+              'SELECT rowid,date,trans,checkno,txfr,payee,category,memo,desc1,desc2,caseno,amount FROM usb;'
+          ],
+          {
+              encoding: 'utf-8',
+              stdio: [0,fd,1]}
+      );
+
+      if (ret.error) {
+          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`)
+          console.log(`error: ${ret.error}`);
+      }
+
+      console.log('done exporting');
+      fs.closeSync(fd);
+      process.exit(0);
+  }
+
+  /*--DON'T CONTINUE UNLESS --csv OPTION USED--*/
+  if (!options.hasOwnProperty('csv'))
+      process.exit(0);
 #+end_src
 
 * Process CSV Files
@@ -1071,6 +1151,7 @@ sticky and won't change until the next call to ~Database#serialize~.
 #+macro: heading @@texinfo:@heading @@$1
 #+macro: subheading @@texinfo:@subheading @@$1
 #+macro: noindent @@texinfo:@noindent @@
+#+macro: option @@texinfo:@option{@@$1@@texinfo:}@@
 
 * Export Settings                                                  :noexport:
 #+texinfo_filename:csv-sqlite3.info
