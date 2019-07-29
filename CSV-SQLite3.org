@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-28 20:52
-#+macro: version Version 0.0.18
+#+date:2019-07-28 21:48
+#+macro: version Version 0.0.19
 
 * Introduction
 :PROPERTIES:
@@ -336,9 +336,11 @@ not exist, it will be created.  If the user requests that a database file be
 deleted, it will be backed up first, then deleted.
 
 The user can attach to a database file (either a specified file or the default
-file, defined as ~$WORKFIN/workfin.db~), or delete a specified database file.
-A deleted file is backed up to a backup directory that needs to be defined as a
-shell environment variable: =WORKBAK=.
+file, defined as ~$WORKFIN/workfin.db~), or delete a specified database file
+and the associated CSV file exported from the database data.  All deleted files
+are backed up to a backup directory that needs to be defined as a shell
+environment variable: =WORKBAK=.  The backed-up files are appended with the
+current date in UNIX time (seconds).
 
 #+cindex:@file{db} database file
 #+cindex:database file @file{db}
@@ -366,7 +368,9 @@ performance.
                   options.delete ? options.delete :    // for deletion
                   DB_DEFAULT;  	       	         // use the default name
   const db_path = `${WORKDB}/${db_file}.sqlite`;
+  const exported_csv = `${WORKDB}/${db_file}.csv`;
   console.log(`db_path: ${db_path}`);
+  console.log(`exported_csv: ${exported_csv}`);
 
   /*---DELETE--*/
   if (options.hasOwnProperty('delete')) {
@@ -378,12 +382,15 @@ performance.
 
       /* DB */
       const db_path_bak = `${WORKBAK}/${db_file}.sqlite.${Date.now()}`;
+      const exported_csv_bak = `${WORKBAK}/$db_file}.csv.${Date.now()}`;
       try {
           fs.renameSync(db_path, db_path_bak);
           console.error(`Renamed ${db_path} to ${db_path_bak}`);
+          fs.renameSync(exported_csv, exported_csv_bak);
+          console.error(`Renamed ${exported_csv} to ${exported_csv_bak}`);
       } catch (err) {
           if (err.code === 'ENOENT')
-              console.log(`file ${db_path} did not exist; ignoring.`);
+              console.log(`file ${db_path} and/or ${exported_csv} did not exist; ignoring.`);
           else {
               throw err;
           }
@@ -454,9 +461,9 @@ upon opening it for writing.  The program will halt after the export.
       console.log(`exporting to ${export_csv}...`);
 
       /*--TRUCATE export_csv UPON OPENING FOR WRITING--*/
-      const fd = fs.openSync(`${WORKDB}/${export_csv}.csv`,'w');
+      let fd = fs.openSync(`${WORKDB}/${export_csv}.csv`,'w');
 
-      const ret = spawnSync(
+      let ret = spawnSync(
           'sqlite3',
           [
               '-header',
@@ -466,7 +473,8 @@ upon opening it for writing.  The program will halt after the export.
           ],
           {
               encoding: 'utf-8',
-              stdio: [0,fd,1]}
+              stdio: [0,fd,1]
+          }
       );
 
       if (ret.error) {
@@ -476,6 +484,32 @@ upon opening it for writing.  The program will halt after the export.
 
       console.log('done exporting');
       fs.closeSync(fd);
+
+      fd = fs.openSync(`${WORKDB}/${export_csv}.ledger`,'as');
+      ret = spawnSync(
+          'ledger',
+          [
+              'convert',
+              `${export_csv}.csv`,
+              '--input-date-format=%Y-%m-%d',
+              '--account=Assets:USB',
+              '--rich-data',
+              '--file=zero.dat',
+              `--now=${(new Date()).toISOString().split('T')[0]}`,
+          ],
+          {
+              encoding: 'utf-8',
+              stdio: [0,fd,2],
+              cwd: `${WORKDB}`,
+          }
+      );
+
+
+      if (ret.error) {
+          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`)
+          console.log(`error: ${ret.error}`);
+      }
+
       process.exit(0);
   }
 
