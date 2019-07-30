@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-29 22:14
-#+macro: version Version 0.0.23
+#+date:2019-07-30 11:14
+#+macro: version Version 0.0.24
 
 * Introduction
 :PROPERTIES:
@@ -561,6 +561,8 @@ below the ~db~ directory.
 
       //'as' - Open file for appending in synchronous mode. The file is created if it does not exist.
       let fd = fs.openSync(export_csv_file,'as');
+      const size = fs.statSync(export_csv_file).size;
+      const header = size === 0 ? 'header' : 'noheader';
       console.log(`export_csv_file: ${export_csv_file}`);
 
       const sql = `
@@ -573,9 +575,9 @@ below the ~db~ directory.
       let ret = spawnSync(
           'sqlite3',
           [
-              '-header',
-              '-csv',
               db_path,
+              '-csv',
+              `-${header}`,
               sql,
           ],
           {
@@ -592,8 +594,10 @@ below the ~db~ directory.
       console.log('done exporting');
       fs.closeSync(fd);
 
+
+      /* CONVERT CSV TO LEDGER */
       const ledger_path = `${process.env.WORKDB}/ledger`;
-      const ledger_file = `${ledger_path}/${export_csv}.ledger`;
+      const ledger_file = `${ledger_path}/${export_csv}.exported.ledger`;
       const zero_file   = `${ledger_path}/zero.ledger`;
       if (!fs.existsSync(ledger_path)) {
           fs.mkdirSync(ledger_path);
@@ -603,7 +607,9 @@ below the ~db~ directory.
           fs.writeFileSync(zero_file,''); // needed by the convert command??
       }
 
-      console.log(`ledger_file: ${ledger_file}`);
+      const l_file = fs.existsSync(ledger_file) ? ledger_file : zero_file;
+
+      console.log(`converting: ${export_csv_file} to ledger_file: ${ledger_file}`);
 
       fd = fs.openSync(ledger_file, 'as');
 
@@ -616,7 +622,7 @@ below the ~db~ directory.
               '--input-date-format=%Y-%m-%d',
               `--account=Assets:${DB_ACCTS[_acct]}`,
               '--rich-data',
-              `--file=${zero_file}`,
+              `--file=${l_file}`,
               `--now=${(new Date()).toISOString().split('T')[0]}`,
           ],
           {
