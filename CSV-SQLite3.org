@@ -2,8 +2,68 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-30 11:14
-#+macro: version Version 0.0.24
+#+date:2019-07-30 12:50
+#+macro: version Version 0.0.25
+
+* Problem Statement
+Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
+like to use Ledger3 to manage my finances.  Two big problems immediately arise:
+
+1. What do I do about the years of prior data that I have accumulated?
+
+2. How do I efficiently process new data as it comes in from my bank?
+
+
+The prior data comes in many different sizes and styles.  For the immediate
+future, I will focus solely on the years 2016-2019.  New data (transactions)
+come in from my bank through CSV and QFX downloads.  There is a =Download
+Transactions= button that loads a modal window with settings for
+
+- Account
+- From Date
+- To Date
+- Download To (i.e., format)
+
+
+So I can easily pick the account, start date, end date, and format, download
+new transactions into a separate file.  The problem that arises is that because
+this is a manual operation, it becomes difficult to keep track of what dates
+have been downloaded and processed already, or even wanting to reprocess some
+dates or all dates, etc. without accumulating duplicate data.
+
+{{{heading(A Workflow)}}}
+
+A potential workflow would therefore be:
+
+1. Download raw data from a bank by account, start date, and end date, and
+   store in source files by account and year, avoiding duplicate data at all
+   times.
+
+2. Process the raw data to remove extraneous and unnecessary data, and reformat
+   the data into the proper form and columns for efficiently working with the
+   financial data, e.g., producing accounting and tax reports, budgets, etc..
+   This processed data will be stored in an SQLite3 database, avoiding
+   duplicating data at all times.
+
+3. Export data from the SQLite3 database, and convert it into a form usable by
+   the Ledger3 program, again always avoiding duplicating transactions.
+
+4. Do as much as possible with the Ledger3 data automatically to create proper
+   double entry transactions to avoid time-consuming manual work.
+
+
+This workflow requires a way to download any amount of data and process it with
+the click of a button without worrying about duplicating transactions.  Ledger3
+is supposed to be able to detect duplicates and avoid reloading them with its
+~convert~ command.  Therefore it would be convenient to be able to download any
+amount of new data from a bank and have it combined with old data without
+duplicating transactions as well.
+
+Then, the workflow would process the downloaded data into a form usable in both
+an SQLite3 database and Ledger3, again without having to worry about
+duplicating data.  Ledger3 uses a hashing function to produce a unique hash for
+each entry, similar to how ~git~ works.  This may be a possible solution for
+the raw bank data as well.
 
 * Introduction
 :PROPERTIES:
