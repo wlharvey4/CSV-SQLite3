@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-29 17:48
-#+macro: version Version 0.0.20
+#+date:2019-07-29 18:46
+#+macro: version Version 0.0.21
 
 * Introduction
 :PROPERTIES:
@@ -406,9 +406,34 @@ performance.
               fs.renameSync(db_csv_path_file, db_csv_path_bak);
               console.log(`Renamed ${db_csv_path_file} to ${db_csv_path_bak}`);
           });
+          fs.rmdirSync(db_csv_path);
       } catch (err) {
           if (err.code === 'ENOENT') {
               console.log(`${db_csv_path} probably does not exist`);
+          } else if (err.code === 'ENOTEMPTY') {
+              console.error(`${db_csv_path} does not seem to be empty`);
+          } else {
+              throw err;
+          }
+      }
+
+      /* Ledger */
+      const ledger_path = `${WORKDB}/ledger`;
+      try {
+          const files = fs.readdirSync(ledger_path);
+          files.forEach(file => {
+              const ledger_file = `${ledger_path}/${file}`;
+              const ledger_file_bak = `${WORKBAK}/${file}.${Date.now()}`;
+              fs.renameSync(ledger_file, ledger_file_bak);
+              console.log(`Renamed ${ledger_file} to ${ledger_file_bak}`);
+          });
+          fs.rmdirSync(ledger_path);
+          console.log(`Removed ${ledger_path} from ${WORKDB}`);
+      } catch (err) {
+          if (err.code === 'ENOENT') {
+              console.log(`${ledger_path} probably does not exist`);
+          } else if (err.code === 'ENOTEMPTY') {
+              console.error(`${ledger_path} does not seem to be empty`);
           } else {
               throw err;
           }
@@ -465,8 +490,15 @@ below the ~db~ directory.
       const export_csv = options['export'] === null ? db_file : options['export'];
       console.log(`exporting to ${export_csv}...`);
 
+      const export_csv_path = `${WORKDB}/csv`;
+      if (!fs.existsSync(export_csv_path)) {
+          fs.mkdirSync(export_csv_path);
+          console.log(`Created ${export_csv_path}`);
+      }
+      const export_csv_file = `${export_csv_path}/${export_csv}.csv`;
+
       /*--TRUCATE export_csv UPON OPENING FOR WRITING--*/
-      let fd = fs.openSync(`${WORKDB}/${export_csv}.csv`,'w');
+      let fd = fs.openSync(export_csv_file,'w');
 
       let ret = spawnSync(
           'sqlite3',
@@ -490,26 +522,27 @@ below the ~db~ directory.
       console.log('done exporting');
       fs.closeSync(fd);
 
-      const ledger_path = `${process.env.WORKDB/ledger}`;
-      const zero_file = `${ledger_path}/zero.ledger`;
+      const ledger_path = `${process.env.WORKDB}/ledger`;
+      const ledger_file = `${ledger_path}/${export_csv}.ledger`;
+      const zero_file   = `${ledger_path}/zero.ledger`;
       if (!fs.existsSync(ledger_path)) {
           fs.mkdirSync(ledger_path);
       }
 
-      if (!fs.existsSync(zero_file) {
+      if (!fs.existsSync(zero_file)) {
           fs.writeFileSync(zero_file,''); // needed by the convert command??
       }
 
-      fd = fs.openSync(`${ledger_path}/${export_csv}.ledger`,'as');
+      fd = fs.openSync(`${ledger_file}`,'as');
       ret = spawnSync(
           'ledger',
           [
               'convert',
-              `${export_csv}.csv`,
+              `${export_csv_file}`,
               '--input-date-format=%Y-%m-%d',
               '--account=Assets:USB',
               '--rich-data',
-              '--file=zero.dat',
+              `--file=${zero_file}`,
               `--now=${(new Date()).toISOString().split('T')[0]}`,
           ],
           {
