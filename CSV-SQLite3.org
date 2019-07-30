@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-28 21:48
-#+macro: version Version 0.0.19
+#+date:2019-07-29 17:48
+#+macro: version Version 0.0.20
 
 * Introduction
 :PROPERTIES:
@@ -451,6 +451,11 @@ The process runs the command, and connects the =STDOUT= stream to the CSV file.
 Since the entire database is exported, the output will truncate the csv file
 upon opening it for writing.  The program will halt after the export.
 
+Upon an export of the SQLite3 data to a CSV file, the program will also send
+the exported data through the Ledger ~convert~ command and into the
+~workfin.ledger~ data file.  This file is located in the ~ledger/~ directory
+below the ~db~ directory.
+
 #+name:csv-sqlite3-export-option
 #+begin_src js +n :tangle index.js
 
@@ -485,7 +490,17 @@ upon opening it for writing.  The program will halt after the export.
       console.log('done exporting');
       fs.closeSync(fd);
 
-      fd = fs.openSync(`${WORKDB}/${export_csv}.ledger`,'as');
+      const ledger_path = `${process.env.WORKDB/ledger}`;
+      const zero_file = `${ledger_path}/zero.ledger`;
+      if (!fs.existsSync(ledger_path)) {
+          fs.mkdirSync(ledger_path);
+      }
+
+      if (!fs.existsSync(zero_file) {
+          fs.writeFileSync(zero_file,''); // needed by the convert command??
+      }
+
+      fd = fs.openSync(`${ledger_path}/${export_csv}.ledger`,'as');
       ret = spawnSync(
           'ledger',
           [
