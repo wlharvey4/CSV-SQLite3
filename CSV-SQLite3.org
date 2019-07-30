@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-29 18:46
-#+macro: version Version 0.0.21
+#+date:2019-07-29 19:51
+#+macro: version Version 0.0.22
 
 * Introduction
 :PROPERTIES:
@@ -533,7 +533,6 @@ below the ~db~ directory.
           fs.writeFileSync(zero_file,''); // needed by the convert command??
       }
 
-      fd = fs.openSync(`${ledger_file}`,'as');
       ret = spawnSync(
           'ledger',
           [
@@ -544,11 +543,10 @@ below the ~db~ directory.
               '--rich-data',
               `--file=${zero_file}`,
               `--now=${(new Date()).toISOString().split('T')[0]}`,
+              `--output=${ledger_file}`,
           ],
           {
               encoding: 'utf-8',
-              stdio: [0,fd,2],
-              cwd: `${WORKDB}`,
           }
       );
 
