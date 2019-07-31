@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-31 07:14
-#+macro: version Version 0.0.26
+#+date:2019-07-31 12:55
+#+macro: version Version 0.0.27
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -33,46 +33,53 @@ have been downloaded and processed already, or even wanting to reprocess some
 dates or all dates, etc. without accumulating duplicate data.  An acceptable
 solution is to concatenate newly downloaded data into files according to
 account and year, then sort the files and remove duplicate items.  This would
-be accomplished with a Bash script concatenating the files, then piping data
-through such programs as ~perl~ to format the date properly, then ~sort~, then
-~uniq~, then into a new file.
+be accomplished with a Perl script concatenating the files, sorting the lines,
+and unique'ifying them and then saving and backing up new and original files.
 
 {{{heading(A Workflow)}}}
 
 A potential workflow would therefore be:
 
-1. Download raw data from a bank by account, start date, and end date, and
-   store in source files by account and year, avoiding duplicate data at all
-   times.  The data is exported by the bank into files called ~export.csv~ and
-   ~export.qfx~ in the default ~Download~ directory.  A script could review the
-   data to determine what the year is.  However, there is no indication in
-   either the filename or the data from which account the data was downloaded.
-   Therefore, any script that is run must be told what account this data is
-   associated with, as for example here:
+1. Download raw data from a bank by account, start date, and end date, which
+   will be stored in the =~/Downloads= directory as ~export.csv~.  A script can
+   be executed to review the data to determine what the year is.  However,
+   there is no indication in either the filename or the data from which account
+   the data was downloaded.  Therefore, any script that is run must be told
+   what account this data is associated with, as for example here:
 
    : catuniq [--dest <path>] <acct>
 
    Invoking this command will look for a file name ~export.csv~ in the
    =~/Downloads= directory, determine what year its transactions are, and
    catenate the file onto the proper destination file according to year and
-   account.  It will create any necessary directory and file to make the
-   command run.
+   account, and then sort and unique'ify the new file.  It will create the
+   necessary destination directory and file to allow the command to run.
 
    The file onto which the export is catenated can either be indicated on the
    command line by means of the ~--dest~ option, or located through the
-   environment variable =$WORKSOURCES= if the ~--dest~ option is omitted.
+   environment variable =$WORKUSB= if the ~--dest~ option is omitted.  Backups
+   are stored in $WORKBAK with the Unix time appended to the end.
 
    #+name:catuniq-source
    #+header: :shebang "#!/usr/bin/env perl"
-   #+begin_src perl -n :tangle catuniq
+   #+begin_src perl -n :tangle catuniq.pl
+
+     package CATUNIQ;
+     our $VERSION = "0.1.0";
+     eval $VERSION;
+     # 2019-07-31T12:30
+
      use strict;
      use warnings; no warnings 'experimental';
      use v5.16;
 
      use File::Spec;			# Portably perform operations on file names
      use File::Path;			# Create or remove directory trees
+     use File::Slurp;		# Simple and Efficient Reading/Writing/Modifying of Complete Files
+     use File::Copy;			# Copy files or filehandles
+     use List::Util 'uniqstr';	# A selection of general-utility list subroutines
      use OptArgs;			# Integrated argument and option processing
-     use Data::Dumper;		# Stringified perl data structures
+     use Data::Printer;		# colored pretty-print of Perl data structures and objects
 
      $OptArgs::COLOUR = 1;
      $OptArgs::PRINT_DEFAULT = 1;
@@ -110,7 +117,7 @@ A potential workflow would therefore be:
          isa     => 'Str',
          alias   => 'd',
          comment => 'path to the destination file upon which the new data will be catenated.',
-         default => exists $ENV{WORKSOURCES} ? File::Spec->catdir($ENV{WORKSOURCES}, 'usb') : undef,
+         default => exists $ENV{WORKUSB} ? $ENV{WORKUSB} : undef,
      );
 
      # PROCESS THE CL OPTIONS AND ARGUMENTS
@@ -119,37 +126,72 @@ A potential workflow would therefore be:
 
 
 
-     # VERIFY
+     # VERIFY FILES
 
-     # verify $dest
-     die ("STOP: you did not supply a '-dest' option and \$WORKSOURCES is not defined.") unless exists $opts->{dest};
-     my $dest = File::Spec->catdir($opts->{dest}, $opts->{acct});
+     # Verify $WORKBAK exists
+     exists $ENV{WORKBAK} || die("STOP: \$WORKBAK is not defined");
 
      # Find and verify 'export.csv'
      my $export = File::Spec->catfile($ENV{HOME}, 'Downloads', 'export.csv');
-     -e -r -w $export || die("STOP: $export does not exist or is not readable or is not writable!!");
+     -e -r -w $export or die("STOP: $export must exist, be readable, and be writable.");
 
-     # Verify acct
+     # Verify correct form of 'acct', e.g., 'usb_6815'
      my ($acct) = $opts->{acct} =~ /usb_(\d{4})/ or die("STOP: incorrect acct form: $opts->{acct}");
      $acct ~~ @valid_accts or die("STOP: acct $acct is not a member of @valid_accts");
 
-     # Find or create destination
-     File::Path::make_path($dest, {verbose => 1}) unless ( -d $dest );
-
-     say("dest: $dest");
-     say("cat from $export\n");
+     # verify a $dest has been supplied
+     die ("STOP: you did not supply a '-dest' option and \$WORKUSB is not defined.") unless exists $opts->{dest};
+     my $dest = File::Spec->catdir($opts->{dest}, $opts->{acct}); # e.g., $WORKUSB/usb_6815
 
      # Find year from within export.csv
-     open (LINE, "cat $export |")
-         || die("Can't cat $export");
-     chomp (my $header = <LINE>);
-     my $line = <LINE>;
-     close LINE;
-     my ($year) = $line =~ /(\d{4})/;
-     say "header: $header";
-     say "year: $year";
+     my @lines = read_file($export);
+     chomp(my $header = shift @lines); # remove the header line from $export
+     my ($year) = $lines[1] =~ /([[:digit:]]{4})/
+         or die("Cannot obtain a year from $export\n");
+
+     # verify $dest_year dir exists or create it, including subdirectories
+     my $dest_year = File::Spec->catdir($dest, $year); # e.g., $WORKUSB/usb_6815/2019
+     File::Path::make_path($dest_year, {verbose => 1}) unless ( -d $dest_year );
+
+     my $acct_year = "$opts->{acct}--${year}.csv";     # e.g., usb_6815--2019.csv
+     my $dest_file = File::Spec->catfile($dest, $year, $acct_year); # e.g., $WORKUSB/usb_6815/2019/usb_6815--2019.csv
 
 
+
+     # Backup original $dest_file to $WORKBAK before appending to
+     my $dest_bak = File::Spec->catfile($ENV{WORKBAK}, "$acct_year." . time());
+     copy($dest_file, $dest_bak);
+
+     # APPEND $export onto $dest_file
+     append_file($dest_file, @lines)
+         or die("STOP: append of $dest_file and \@lines failed.\n");
+
+     # UNIQUE new $dest_file
+     @lines = uniqstr sort map { # first change date to year-mm-dd for proper sorting
+         if (/([[:digit:]]{1,2})\/([[:digit:]]{1,2})\/([[:digit:]]{4})/) {
+             my $year = sprintf("%4d-%02d-%02d",$3,$1,$2);
+             s/$&/$year/;
+         }
+         $_;
+     } read_file($dest_file);
+
+     unshift @lines, pop @lines; # header ends up last after the sort; put it back to beginning
+
+     # Save new $dest_file
+     write_file($dest_file, @lines);
+
+     # Backup export.csv to $WORKBAK
+     move($export, File::Spec->catfile($ENV{WORKBAK}, "export.${acct_year}." . time()));
+
+
+
+     say "SUCCESS: $export catuniq'ed onto $dest_file.";
+   #+end_src
+
+   #+name:link-catuniq-into-workbin
+   #+header: :results output :exports both
+   #+begin_src sh
+   ln -s $PWD/catuniq.pl $WORKBIN/catuniq
    #+end_src
 
 2. Process the raw data to remove extraneous and unnecessary data while
