@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-30 12:50
-#+macro: version Version 0.0.25
+#+date:2019-07-31 07:14
+#+macro: version Version 0.0.26
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -16,8 +16,9 @@ like to use Ledger3 to manage my finances.  Two big problems immediately arise:
 
 The prior data comes in many different sizes and styles.  For the immediate
 future, I will focus solely on the years 2016-2019.  New data (transactions)
-come in from my bank through CSV and QFX downloads.  There is a =Download
-Transactions= button that loads a modal window with settings for
+come in from my bank through CSV and QFX downloads.  I will download and save
+the QFX data, but work exclusively with the CSV files at this point.  There is
+a =Download Transactions= button that loads a modal window with settings for
 
 - Account
 - From Date
@@ -29,7 +30,12 @@ So I can easily pick the account, start date, end date, and format, download
 new transactions into a separate file.  The problem that arises is that because
 this is a manual operation, it becomes difficult to keep track of what dates
 have been downloaded and processed already, or even wanting to reprocess some
-dates or all dates, etc. without accumulating duplicate data.
+dates or all dates, etc. without accumulating duplicate data.  An acceptable
+solution is to concatenate newly downloaded data into files according to
+account and year, then sort the files and remove duplicate items.  This would
+be accomplished with a Bash script concatenating the files, then piping data
+through such programs as ~perl~ to format the date properly, then ~sort~, then
+~uniq~, then into a new file.
 
 {{{heading(A Workflow)}}}
 
@@ -37,13 +43,120 @@ A potential workflow would therefore be:
 
 1. Download raw data from a bank by account, start date, and end date, and
    store in source files by account and year, avoiding duplicate data at all
-   times.
+   times.  The data is exported by the bank into files called ~export.csv~ and
+   ~export.qfx~ in the default ~Download~ directory.  A script could review the
+   data to determine what the year is.  However, there is no indication in
+   either the filename or the data from which account the data was downloaded.
+   Therefore, any script that is run must be told what account this data is
+   associated with, as for example here:
 
-2. Process the raw data to remove extraneous and unnecessary data, and reformat
-   the data into the proper form and columns for efficiently working with the
-   financial data, e.g., producing accounting and tax reports, budgets, etc..
-   This processed data will be stored in an SQLite3 database, avoiding
-   duplicating data at all times.
+   : catuniq [--dest <path>] <acct>
+
+   Invoking this command will look for a file name ~export.csv~ in the
+   =~/Downloads= directory, determine what year its transactions are, and
+   catenate the file onto the proper destination file according to year and
+   account.  It will create any necessary directory and file to make the
+   command run.
+
+   The file onto which the export is catenated can either be indicated on the
+   command line by means of the ~--dest~ option, or located through the
+   environment variable =$WORKSOURCES= if the ~--dest~ option is omitted.
+
+   #+name:catuniq-source
+   #+header: :shebang "#!/usr/bin/env perl"
+   #+begin_src perl -n :tangle catuniq
+     use strict;
+     use warnings; no warnings 'experimental';
+     use v5.16;
+
+     use File::Spec;			# Portably perform operations on file names
+     use File::Path;			# Create or remove directory trees
+     use OptArgs;			# Integrated argument and option processing
+     use Data::Dumper;		# Stringified perl data structures
+
+     $OptArgs::COLOUR = 1;
+     $OptArgs::PRINT_DEFAULT = 1;
+     $OptArgs::PRINT_ISA = 1;
+
+     my @valid_accts = (qw'
+         6815
+         6831
+         6151'
+     );
+
+     my @valid_years = (qw'
+         2016
+         2017
+         2018
+         2019'
+     );
+
+
+     # ESTABLISH THE CL OPTIONS AND ARGUMENTS
+     opt help => (
+         isa => 'Bool',
+         comment => 'Help',
+         alias => 'h',
+         ishelp => 1,
+     );
+
+     arg acct => (
+         isa     => 'Str',
+         comment => 'The name of the account to which the file is related; e.g. "usb_6815" or "usb_6831"',
+         required=> 1,
+     );
+
+     opt dest => (
+         isa     => 'Str',
+         alias   => 'd',
+         comment => 'path to the destination file upon which the new data will be catenated.',
+         default => exists $ENV{WORKSOURCES} ? File::Spec->catdir($ENV{WORKSOURCES}, 'usb') : undef,
+     );
+
+     # PROCESS THE CL OPTIONS AND ARGUMENTS
+     my $opts = optargs;
+
+
+
+
+     # VERIFY
+
+     # verify $dest
+     die ("STOP: you did not supply a '-dest' option and \$WORKSOURCES is not defined.") unless exists $opts->{dest};
+     my $dest = File::Spec->catdir($opts->{dest}, $opts->{acct});
+
+     # Find and verify 'export.csv'
+     my $export = File::Spec->catfile($ENV{HOME}, 'Downloads', 'export.csv');
+     -e -r -w $export || die("STOP: $export does not exist or is not readable or is not writable!!");
+
+     # Verify acct
+     my ($acct) = $opts->{acct} =~ /usb_(\d{4})/ or die("STOP: incorrect acct form: $opts->{acct}");
+     $acct ~~ @valid_accts or die("STOP: acct $acct is not a member of @valid_accts");
+
+     # Find or create destination
+     File::Path::make_path($dest, {verbose => 1}) unless ( -d $dest );
+
+     say("dest: $dest");
+     say("cat from $export\n");
+
+     # Find year from within export.csv
+     open (LINE, "cat $export |")
+         || die("Can't cat $export");
+     chomp (my $header = <LINE>);
+     my $line = <LINE>;
+     close LINE;
+     my ($year) = $line =~ /(\d{4})/;
+     say "header: $header";
+     say "year: $year";
+
+
+   #+end_src
+
+2. Process the raw data to remove extraneous and unnecessary data while
+   reformating the data into the proper form and columns for efficiently
+   working with the financial data, e.g., producing accounting and tax reports,
+   budgets, etc..  This processed data will be stored in an SQLite3 database,
+   avoiding duplicating data at all times.
 
 3. Export data from the SQLite3 database, and convert it into a form usable by
    the Ledger3 program, again always avoiding duplicating transactions.
