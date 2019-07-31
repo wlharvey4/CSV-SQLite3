@@ -2,7 +2,7 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-31 12:46
+#+date:2019-07-31 12:59
 #+macro: version Version 0.0.27
 
 * Problem Statement
@@ -158,6 +158,11 @@ A potential workflow would therefore be:
 
 
 
+
+     # Backup original $dest_file to $WORKBAK before appending to
+     my $dest_bak = File::Spec->catfile($ENV{WORKBAK}, "$acct_year." . time());
+     copy($dest_file, $dest_bak);
+
      # APPEND $export onto $dest_file
      append_file($dest_file, @lines)
          or die("STOP: append of $dest_file and \@lines failed.\n");
@@ -172,12 +177,6 @@ A potential workflow would therefore be:
      } read_file($dest_file);
 
      unshift @lines, pop @lines; # header ends up last after the sort; put it back to beginning
-
-
-
-     # Backup original $dest_file to $WORKBAK
-     my $dest_bak = File::Spec->catfile($ENV{WORKBAK}, "$acct_year." . time());
-     copy($dest_file, $dest_bak);
 
      # Save new $dest_file
      write_file($dest_file, @lines);
