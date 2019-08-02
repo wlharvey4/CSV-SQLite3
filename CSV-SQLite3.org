@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-08-01 23:04
-#+macro: version Version 0.0.29
+#+date:2019-08-02 01:58
+#+macro: version Version 0.0.30
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -100,7 +100,7 @@ the raw bank data as well.
    #+begin_src perl -n :tangle catuniq.pl
 
      package CATUNIQ;
-     our $VERSION = "0.1.1";
+     our $VERSION = "0.1.2";
      eval $VERSION;
      # 2019-07-31T12:30
 
@@ -152,6 +152,12 @@ the raw bank data as well.
          default => exists $ENV{WORKUSB} ? $ENV{WORKUSB} : undef,
      );
 
+     opt restore => (
+         comment => 'Restore a backed-up file related to <ACCT>',
+         isa     => 'Flag',
+         alias   => 'r',
+     );
+
      # PROCESS THE CL OPTIONS AND ARGUMENTS
      my $opts = optargs;
 
@@ -163,13 +169,19 @@ the raw bank data as well.
      # Verify $WORKBAK exists
      exists $ENV{WORKBAK} || die("STOP: \$WORKBAK is not defined");
 
-     # Find and verify 'export.csv'
-     my $export = File::Spec->catfile($ENV{HOME}, 'Downloads', 'export.csv');
-     -e -r -w $export or die("STOP: $export must exist, be readable, and be writable.");
-
      # Verify correct form of 'acct', e.g., 'usb_6815'
      my ($acct) = $opts->{acct} =~ /usb_(\d{4})/ or die("STOP: incorrect acct form: $opts->{acct}");
      $acct ~~ @valid_accts or die("STOP: acct $acct is not a member of @valid_accts");
+
+     if ($opts->{restore}) {
+         say "Running restore.";
+         restore();
+         exit;
+     }
+
+     # Find and verify 'export.csv'
+     my $export = File::Spec->catfile($ENV{HOME}, 'Downloads', 'export.csv');
+     -e -r -w $export or die("STOP: $export must exist, be readable, and be writable.");
 
      # verify a $dest has been supplied
      die ("STOP: you did not supply a '-dest' option and \$WORKUSB is not defined.") unless exists $opts->{dest};
@@ -219,6 +231,39 @@ the raw bank data as well.
 
 
      say "SUCCESS: $export catuniq'ed onto $dest_file.";
+
+     sub restore {
+         use POSIX qw(strftime);
+         my $acct = $opts->{acct}; # e.g. usb_6815
+         my $dt = qr/^(\d{4}-\d{2}-\d{2})/;
+
+         chdir $ENV{WORKBAK};
+         opendir (my $dh, '.') || die "Can't open $ENV{WORKBAK}: $!";
+
+         my @baks =
+             sort { # sort by most recent backup first
+                 my ($at) = $a->{t} =~ $dt; # just sort by datetime
+                 my ($bt) = $b->{t} =~ $dt;
+                 $bt cmp $at;
+             }
+             map { # change Unix time to POSIX ISO datetime %Y-%m-%dT%H:%M:%S
+                 my ($acct, $time) = /^(.*.csv).(\d+)$/;
+                 $time = substr $time, 0, 10; # remove milliseconds from those times that have them
+                 my $t = (strftime "%F T %T", localtime($time)) . sprintf(" --- %s", $acct);
+                 {t => $t, o => $_}; # map to POSIX time, and original filename as a hashref
+             }
+             grep {/$acct.*.csv/ }
+             readdir($dh);
+
+         foreach (@baks) {
+             state $c = 0;
+             printf("[%2d] %s\n", $c++, $_->{t});
+         }
+
+         print "Pick a number: ";
+         my $num = <STDIN>;
+         say "You chose $baks[$num]->{t} ($baks[$num]->{o})";
+     }
    #+end_src
 
    #+name:link-catuniq-into-workbin
@@ -226,6 +271,8 @@ the raw bank data as well.
    #+begin_src sh
      ln -f $PWD/catuniq.pl $WORKBIN/catuniq
    #+end_src
+
+   #+RESULTS: link-catuniq-into-workbin
 
 * Introduction
 :PROPERTIES:
