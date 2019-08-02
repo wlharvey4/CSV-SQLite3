@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-08-01 22:32
-#+macro: version Version 0.0.28
+#+date:2019-08-01 23:04
+#+macro: version Version 0.0.29
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -100,7 +100,7 @@ the raw bank data as well.
    #+begin_src perl -n :tangle catuniq.pl
 
      package CATUNIQ;
-     our $VERSION = "0.1.0";
+     our $VERSION = "0.1.1";
      eval $VERSION;
      # 2019-07-31T12:30
 
@@ -113,12 +113,9 @@ the raw bank data as well.
      use File::Slurp;		# Simple and Efficient Reading/Writing/Modifying of Complete Files
      use File::Copy;			# Copy files or filehandles
      use List::Util 'uniqstr';	# A selection of general-utility list subroutines
-     use OptArgs;			# Integrated argument and option processing
+     use OptArgs2;			# Integrated argument and option processing
      use Data::Printer;		# colored pretty-print of Perl data structures and objects
 
-     $OptArgs::COLOUR = 1;
-     $OptArgs::PRINT_DEFAULT = 1;
-     $OptArgs::PRINT_ISA = 1;
 
      my @valid_accts = (qw'
          6815
@@ -136,7 +133,7 @@ the raw bank data as well.
 
      # ESTABLISH THE CL OPTIONS AND ARGUMENTS
      opt help => (
-         isa => 'Bool',
+         isa => 'Flag',
          comment => 'Help',
          alias => 'h',
          ishelp => 1,
@@ -227,7 +224,7 @@ the raw bank data as well.
    #+name:link-catuniq-into-workbin
    #+header: :results output :exports both
    #+begin_src sh
-   ln -f $PWD/catuniq.pl $WORKBIN/catuniq
+     ln -f $PWD/catuniq.pl $WORKBIN/catuniq
    #+end_src
 
 * Introduction
