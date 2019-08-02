@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-07-31 12:59
-#+macro: version Version 0.0.27
+#+date:2019-08-01 22:32
+#+macro: version Version 0.0.28
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -15,10 +15,15 @@ like to use Ledger3 to manage my finances.  Two big problems immediately arise:
 
 
 The prior data comes in many different sizes and styles.  For the immediate
-future, I will focus solely on the years 2016-2019.  New data (transactions)
-come in from my bank through CSV and QFX downloads.  I will download and save
-the QFX data, but work exclusively with the CSV files at this point.  There is
-a =Download Transactions= button that loads a modal window with settings for
+future, I will focus solely on the years 2016-2019.  I can add additional years
+after getting things to work for 2016-2019.
+
+New data (transactions) come in from my bank through CSV and QFX downloads.  I
+will download and save both of the CSV and QFX data, but work exclusively with
+the CSV files at this point.
+
+There is a =Download Transactions= button that loads a modal window with
+settings for
 
 - Account
 - From Date
@@ -26,17 +31,17 @@ a =Download Transactions= button that loads a modal window with settings for
 - Download To (i.e., format)
 
 
-So I can easily pick the account, start date, end date, and format, download
-new transactions into a separate file.  The problem that arises is that because
-this is a manual operation, it becomes difficult to keep track of what dates
-have been downloaded and processed already, or even wanting to reprocess some
-dates or all dates, etc. without accumulating duplicate data.  An acceptable
-solution is to concatenate newly downloaded data into files according to
-account and year, then sort the files and remove duplicate items.  This would
-be accomplished with a Perl script concatenating the files, sorting the lines,
-and unique'ifying them and then saving and backing up new and original files.
+{{{noindent}}} So I can easily pick the account, start date, end date, and
+format, download new transactions into a separate file.  The problem that
+arises is that because this is a manual operation, it becomes difficult to keep
+track of what dates have been downloaded and processed already, or even wanting
+to reprocess some dates or all dates, etc. without accumulating duplicate data.
+An acceptable solution is to concatenate newly downloaded data into files
+according to account and year, then remove duplicate items.  This would be
+accomplished with a Perl script concatenating the files, sorting the lines, and
+unique'ifying them and then saving and backing up new and original files.
 
-{{{heading(A Workflow)}}}
+** The Workflow
 
 A potential workflow would therefore be:
 
@@ -60,6 +65,36 @@ A potential workflow would therefore be:
    environment variable =$WORKUSB= if the ~--dest~ option is omitted.  Backups
    are stored in $WORKBAK with the Unix time appended to the end.
 
+   [[catuniq-source][Perl script catuniq.pl]]
+
+2. Process the raw data to remove extraneous and unnecessary data while
+   reformating the data into the proper form and columns for efficiently
+   working with the financial data, e.g., producing accounting and tax reports,
+   budgets, etc..  This processed data will be stored in an SQLite3 database,
+   avoiding duplicating data at all times.
+
+3. Export data from the SQLite3 database, and convert it into a form usable by
+   the Ledger3 program, again always avoiding duplicating transactions.
+
+4. Do as much as possible with the Ledger3 data automatically to create proper
+   double entry transactions to avoid time-consuming manual work.
+
+
+This workflow requires a way to download any amount of data and process it with
+the click of a button without worrying about duplicating transactions.  Ledger3
+is supposed to be able to detect duplicates and avoid reloading them with its
+~convert~ command.  Therefore it would be convenient to be able to download any
+amount of new data from a bank and have it combined with old data without
+duplicating transactions as well.
+
+Then, the workflow would process the downloaded data into a form usable in both
+an SQLite3 database and Ledger3, again without having to worry about
+duplicating data.  Ledger3 uses a hashing function to produce a unique hash for
+each entry, similar to how ~git~ works.  This may be a possible solution for
+the raw bank data as well.
+
+** Source Code for catuniq.pl
+   #+caption:Source code for catuniq.pl
    #+name:catuniq-source
    #+header: :shebang "#!/usr/bin/env perl"
    #+begin_src perl -n :tangle catuniq.pl
@@ -192,34 +227,8 @@ A potential workflow would therefore be:
    #+name:link-catuniq-into-workbin
    #+header: :results output :exports both
    #+begin_src sh
-   ln -s $PWD/catuniq.pl $WORKBIN/catuniq
+   ln -f $PWD/catuniq.pl $WORKBIN/catuniq
    #+end_src
-
-2. Process the raw data to remove extraneous and unnecessary data while
-   reformating the data into the proper form and columns for efficiently
-   working with the financial data, e.g., producing accounting and tax reports,
-   budgets, etc..  This processed data will be stored in an SQLite3 database,
-   avoiding duplicating data at all times.
-
-3. Export data from the SQLite3 database, and convert it into a form usable by
-   the Ledger3 program, again always avoiding duplicating transactions.
-
-4. Do as much as possible with the Ledger3 data automatically to create proper
-   double entry transactions to avoid time-consuming manual work.
-
-
-This workflow requires a way to download any amount of data and process it with
-the click of a button without worrying about duplicating transactions.  Ledger3
-is supposed to be able to detect duplicates and avoid reloading them with its
-~convert~ command.  Therefore it would be convenient to be able to download any
-amount of new data from a bank and have it combined with old data without
-duplicating transactions as well.
-
-Then, the workflow would process the downloaded data into a form usable in both
-an SQLite3 database and Ledger3, again without having to worry about
-duplicating data.  Ledger3 uses a hashing function to produce a unique hash for
-each entry, similar to how ~git~ works.  This may be a possible solution for
-the raw bank data as well.
 
 * Introduction
 :PROPERTIES:
@@ -1513,6 +1522,11 @@ sticky and won't change until the next call to ~Database#serialize~.
 :unnumbered: true
 :END:
 
+* Listings
+:PROPERTIES:
+:unnumbered: t
+:END:
+#+texinfo:@listoffloats Listing
 * Macro Definitions                                                :noexport:
 #+macro: heading @@texinfo:@heading @@$1
 #+macro: subheading @@texinfo:@subheading @@$1
