@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-08-25 13:35
-#+macro: version Version 0.0.32
+#+date:2019-08-25 16:45
+#+macro: version Version 0.0.33
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -537,7 +537,7 @@ Node.js built-in modules:
 
 - ~fs~ :: File System for working with files
 
-- ~util~ :: Utilities for inspectint objects
+- ~util~ :: Utilities for inspecting objects
 
 #+name:csv-sqlite3-dependencies
 #+header: :mkdirp yes
@@ -1468,7 +1468,7 @@ means that it's safe to start calling functions on the database object even if
 it is not yet fully opened.  The ~Database#close()~ function will wait until
 all pending queries are completed before closing the database.
 
-** Node-SQLite3 Control Flow---Two Exeuction Modes
+** Node-SQLite3 Control Flow---Two Execution Modes
 #+cindex:execution flow
 #+cindex:parallel execution
 #+cindex:exclusive mode
