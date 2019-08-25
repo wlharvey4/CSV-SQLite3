@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-08-02 01:58
-#+macro: version Version 0.0.30
+#+date:2019-08-25 13:35
+#+macro: version Version 0.0.32
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -97,7 +97,7 @@ the raw bank data as well.
    #+caption:Source code for catuniq.pl
    #+name:catuniq-source
    #+header: :shebang "#!/usr/bin/env perl"
-   #+begin_src perl -n :tangle catuniq.pl
+   #+begin_src perl -n :tangle scripts/catuniq.pl :mkdirp yes
 
      package CATUNIQ;
      our $VERSION = "0.1.2";
@@ -173,6 +173,10 @@ the raw bank data as well.
      my ($acct) = $opts->{acct} =~ /usb_(\d{4})/ or die("STOP: incorrect acct form: $opts->{acct}");
      $acct ~~ @valid_accts or die("STOP: acct $acct is not a member of @valid_accts");
 
+     # verify a $dest has been supplied
+     die ("STOP: you did not supply a '-dest' option and \$WORKUSB is not defined.") unless exists $opts->{dest};
+     my $dest = File::Spec->catdir($opts->{dest}, $opts->{acct}); # e.g., $WORKUSB/usb_6815
+
      if ($opts->{restore}) {
          say "Running restore.";
          restore();
@@ -182,10 +186,6 @@ the raw bank data as well.
      # Find and verify 'export.csv'
      my $export = File::Spec->catfile($ENV{HOME}, 'Downloads', 'export.csv');
      -e -r -w $export or die("STOP: $export must exist, be readable, and be writable.");
-
-     # verify a $dest has been supplied
-     die ("STOP: you did not supply a '-dest' option and \$WORKUSB is not defined.") unless exists $opts->{dest};
-     my $dest = File::Spec->catdir($opts->{dest}, $opts->{acct}); # e.g., $WORKUSB/usb_6815
 
      # Find year from within export.csv
      my @lines = read_file($export);
@@ -261,15 +261,29 @@ the raw bank data as well.
          }
 
          print "Pick a number: ";
-         my $num = <STDIN>;
+         chomp (my $num = <STDIN>);
          say "You chose $baks[$num]->{t} ($baks[$num]->{o})";
+         print "restore (y/n)? ";
+         exit unless <STDIN> =~ /y/i;
+
+         my ($file) = $baks[$num]->{t} =~ /--- (.*)$/; # i.e., 'usb_6815--2019.csv'
+         my ($year) = $file =~ /(\d{4})\.csv$/; # i.e., '2019'
+         my $restore_path = File::Spec->catfile($dest,$year,$file); # full path to file to be restored
+         my $bak_path = File::Spec->catfile($ENV{WORKBAK}, $baks[$num]->{o}); # full path to backed-up file
+
+         # back up the file to be restored, just in case; use same directory
+         move( ${restore_path}, ${restore_path}.'.bak') or die "Backup of ${restore_path} failed: $!";
+         # note that the backed-up file will be deleted
+         move( ${bak_path}, ${restore_path}) or die "Restore of $baks[$num]->{o} failed: $!";
+
+         say "Successfully restored $baks[$num]->{o} to $restore_path";
      }
    #+end_src
 
    #+name:link-catuniq-into-workbin
    #+header: :results output :exports both
    #+begin_src sh
-     ln -f $PWD/catuniq.pl $WORKBIN/catuniq
+     ln -f $PWD/scripts/catuniq.pl $WORKBIN/catuniq
    #+end_src
 
    #+RESULTS: link-catuniq-into-workbin
