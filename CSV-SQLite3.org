@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-08-25 16:45
-#+macro: version Version 0.0.33
+#+date:2019-08-31 09:55
+#+macro: version Version 0.0.34
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -537,12 +537,15 @@ Node.js built-in modules:
 
 - ~fs~ :: File System for working with files
 
+- ~path~ :: Utilities for working with file and directory paths
+
 - ~util~ :: Utilities for inspecting objects
 
 #+name:csv-sqlite3-dependencies
 #+header: :mkdirp yes
 #+begin_src js -n :tangle index.js
 const fs   = require('fs');
+const path = require('path');
 const util = require('util');
 
 const cl_args  = require('command-line-args');
@@ -551,6 +554,8 @@ const csv      = require('csv');
 const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
 const accounting = require('accounting');
 #+end_src
+
+#+RESULTS: csv-sqlite3-dependencies
 
 ** Establish Database Table Name and Columns
 #+name:database-table-columns
@@ -806,10 +811,12 @@ The process runs the command, and connects the =STDOUT= stream to the CSV file.
 Since the entire database is exported, the output will truncate the csv file
 upon opening it for writing.  The program will halt after the export.
 
+#+cindex:@command{convert} command
 Upon an export of the SQLite3 data to a CSV file, the program will also send
-the exported data through the Ledger ~convert~ command and into the
-~workfin.ledger~ data file.  This file is located in the ~ledger/~ directory
-below the ~db~ directory.
+the exported data through the Ledger {{{command(convert)}}} command and into
+the ~workfin.ledger~ data file.[fn::Refer to the Ledge manual at Sec. 7.2.1.2
+for the {{{command(convert}}}} command.]  This file is located in the ~ledger/~
+directory below the ~db~ directory.
 
 #+name:csv-sqlite3-export-option
 #+begin_src js +n :tangle index.js
@@ -817,10 +824,10 @@ below the ~db~ directory.
   /*--EXPORT--*/
   if (options.hasOwnProperty('export')) {
       const { spawnSync } = require('child_process');
-      const export_csv = options['export'] === null ? db_file : options['export'];
+      const export_csv = options['export'] || db_file;
       console.log(`exporting to ${export_csv}...`);
 
-      const export_csv_path = `${WORKDB}/csv`;
+      const export_csv_path = path.join(`${WORKDB}`, 'csv');
       if (!fs.existsSync(export_csv_path)) {
           fs.mkdirSync(export_csv_path);
           console.log(`Created ${export_csv_path}`);
@@ -1590,6 +1597,7 @@ sticky and won't change until the next call to ~Database#serialize~.
 #+macro: subheading @@texinfo:@subheading @@$1
 #+macro: noindent @@texinfo:@noindent @@
 #+macro: option @@texinfo:@option{@@$1@@texinfo:}@@
+#+macro: command @@texinfo:@command{@@$1@@texinfo:}@@
 
 * Export Settings                                                  :noexport:
 #+texinfo_filename:csv-sqlite3.info
