@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-08-31 09:55
-#+macro: version Version 0.0.34
+#+date:2019-08-31 11:06
+#+macro: version Version 0.0.35
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -1574,6 +1574,222 @@ Calling ~Database#parallelize()~ within nested functions is safe:
 
 If you call it without a function parameter, the execution mode setting is
 sticky and won't change until the next call to ~Database#serialize~.
+
+* Converting CSV Files
+:PROPERTIES:
+:appendix: t
+:END:
+
+** Ledger Convert Command
+- Ledger manual sec. 7.2.1.2
+
+
+#+cindex:Ledger @command{convert} command
+#+cindex:@command{convert} command, Ledger
+#+cindex:csv file, parse
+#+cindex:parse csv file
+The {{{command(convert)}}} command parses a comma separated value (csv) file
+and prints Ledger transactions.  Importing csv files is a lot of work, but is
+very amenable to scripting.
+
+: $ ledger convert download.csv --input-date-format "%m/%d/%Y"
+
+{{{heading(Fields Descriptors)}}}
+
+#+cindex:fields, csv file
+#+cindex:csv file fields
+Your bank’s csv files will have fields in different orders from other banks, so
+there must be a way to tell Ledger what to expect.  Ledger expects the first
+line to contain a description of the fields on each line of the file.
+
+- Insert a line at the beginning of the csv file that describes the fields to
+  Ledger.
+
+- The fields ledger can recognize contain these case-insensitive strings:
+
+  #+attr_texinfo: :indic code
+  - date
+
+  - posted
+
+  - code
+
+  - payee
+
+  - desc / description
+
+  - amount
+
+  - cost
+
+  - total
+
+  - note
+
+- the =Input Date Format= option tells ledger how to interpret the dates:
+
+  - =--input-date-format DATE_FORMAT=
+
+  - e.g., ="%m/%d/%Y"=
+
+  #+cindex:metadata
+- Metadata
+
+  - If there are columns in the bank data you would like to keep in your ledger
+    data, besides the primary fields described above, you can name them in the
+    field descriptor list and Ledger will include them in the transaction as
+    meta data if it doesn’t recognize the field name.
+
+  - CSV :: original line from the csv file
+
+  - Imported :: date data imported
+
+  - UUID :: unique checksum; if an entry with the same ‘UUID’ tag is already
+            included in the normal ledger file (specified via {{{option(--file
+            FILE (-f))}}} or via the environment variable =LEDGER_FILE=) this
+            entry will not be printed again.
+
+
+{{{heading(Convert Command Options)}}}
+
+The convert command accepts the following options:
+
+#+attr_texinfo: :indic option
+
+#+cindex:@option{invert} option
+#+cindex:convert option, @{option{invert}
+- --invert :: inverts the amount field
+
+              #+cindex:@option{auto-match} option
+              #+cindex:convert option, @option{--auto-match}
+- --auto-match :: automatically matches an account from the Ledger journal for
+                  every CSV line
+
+                  #+cindex:@option{account} option
+                  #+cindex:convert option, @option{--account}
+- --account STR :: use to specify the account to balance against
+
+                   #+cindex:@option{rich-data} option
+                   #+cindex:convert option, @option{--rich-data}
+- --rich-data :: stores additional tag/value pairs
+
+                 #+cindex:environment variable @var{LEDGER_FILE}
+                 #+cindex:@var{LEDGER_FILE} environment variable
+                 #+cindex:@option{--file} option
+                 #+cindex:convert option, @option{--file}
+- --file (-f) :: the normal ledger file (could also be specified via the
+                 environment variable =LEDGER_FILE=)
+
+                 #+cindex:@option{--input-data-format} option
+                 #+cindex:convert option, @option{--input-data-format}
+- --input-date-format :: tells ledger how to interpret the dates
+
+{{{heading(Command Directives)}}}
+
+#+cindex:directives
+#+cindex:command directives
+#+cindex:@code{payee} directive
+#+cindex:@code{alias} directive
+#+cindex:@code{account} directive
+You can also use {{{command(convert)}}} with =payee= and =account= directives.
+
+1. Directives
+
+   a. =directive= :: Command directives must occur at the beginning of a line.
+
+   b. =account= directive :: Pre-declare valid account names.  This only has an
+        effect if {{{option(--strict)}}} or {{{option(--pedantic)}}} is used.
+        The =account= directive supports several optional sub-directives, if
+        they immediately follow the =account== directive and if they begin with
+        whitespace:
+
+        #+begin_example
+        account Expenses:Food
+                      note This account is all about the chicken!
+                      alias food
+                      payee ^(KFC|Popeyes)$
+                      check commodity == "$"
+                      assert commodity == "$"
+                      eval print("Hello!")
+                      default
+        #+end_example
+
+   c. =payee= sub-directive :: The =payee= sub-directive of the =account=
+        directive, which can occur multiple times, provides regexes that
+        identify the =account= if that payee is encountered and an =account=
+        within its transaction ends in the name "Unknown".
+
+        #+begin_example
+        2012-02-27 KFC
+                      Expenses:Unknown      $10.00  ; Read now as "Expenses:Food"
+                      Assets:Cash
+        #+end_example
+
+   d. =alias= sub-directive :: The =alias= sub-directive of the =acount=
+        directive, which can occur multiple times, allows the alias to be used
+        in place of the full account name anywhere that account names are
+        allowed.
+
+   e. =payee= directive :: The payee directive supports two optional
+        sub-directives, if they immediately follow the payee directive and--—if
+        it is on a successive line—--begins with white-space:
+
+        #+begin_example
+        payee KFC
+          alias KENTUCKY FRIED CHICKEN
+          uuid 2a2e21d434356f886c84371eebac6e44f1337fda
+        #+end_example
+
+        The =alias= sub-directive of the =payee= directive provides a regex
+        which, if it matches a parsed payee, the declared payee name is
+        substituted:
+
+   f. =alias= directive :: Define an alias for an account name.  The aliases
+        are only in effect for transactions read in after the alias is defined
+        and are affected by =account= directives that precede them.  The
+        =alias= sub-directive, which can occur multiple times, allows the alias
+        to be used in place of the full account name anywhere that account
+        names are allowed.
+
+      #+begin_example
+      alias Dining=Expenses:Entertainment:Dining
+      alias Checking=Assets:Credit Union:Joint Checking Account
+
+      2011/11/28 YummyPalace
+          Dining        $10.00
+          Checking
+      #+end_example
+
+2. First, you can use the =payee= directive and its =alias= sub-directive to
+   rewrite the =payee= field based on some rules.
+
+   #+begin_example
+   payee Aldi
+         alias ^ALDI SUED SAGT DANKE
+   #+end_example
+
+3. Then you can use the =account= directive and its =payee= sub-directive to
+   specify the account.
+
+   #+begin_example
+   account Aufwand:Einkauf:Lebensmittel
+          payee ^(Aldi|Alnatura|Kaufland|REWE)$
+   #+end_example
+
+
+{{{subheading(Directive Example)}}}
+
+#+begin_example
+payee Aldi
+          alias ^ALDI SUED SAGT DANKE
+account Aufwand:Einkauf:Lebensmittel
+          payee ^(Aldi|Alnatura|Kaufland|REWE)$
+#+end_example
+
+Note that it may be necessary for the output of {{{command(ledger convert)}}}
+to be passed through {{{command(ledger print)}}} a second time if you want to
+match on the new =payee= field.  During the {{{command(ledger convert)}}} run,
+only the original =payee= name as specified in the csv data seems to be used.
 
 * Index
 :PROPERTIES:
