@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-08-31 11:06
-#+macro: version Version 0.0.35
+#+date:2019-09-02 08:30
+#+macro: version Version 0.0.36
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -860,7 +860,7 @@ directory below the ~db~ directory.
   FROM   usb
   WHERE  acct = '${usb_acct}' and date like '${_year}%';`;
 
-  console.log(`sql: ${sql}`);
+      console.log(`sql: ${sql}`);
 
       let ret = spawnSync(
           'sqlite3',
@@ -901,8 +901,8 @@ directory below the ~db~ directory.
 
       console.log(`converting: ${export_csv_file} to ledger_file: ${ledger_file}`);
 
-      fd = fs.openSync(ledger_file, 'as');
-
+      fd = fs.openSync(ledger_file, 'as');	// 'as' - Open file for appending in synchronous mode.
+						// The file is created if it does not exist.
       ret = spawnSync(
           'ledger',
           [
