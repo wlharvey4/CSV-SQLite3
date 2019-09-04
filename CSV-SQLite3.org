@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-02 08:30
-#+macro: version Version 0.0.36
+#+date:2019-09-03 22:42
+#+macro: version Version 0.0.37
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -811,12 +811,18 @@ The process runs the command, and connects the =STDOUT= stream to the CSV file.
 Since the entire database is exported, the output will truncate the csv file
 upon opening it for writing.  The program will halt after the export.
 
+{{{heading(The ~ledger~ ~convert~ Command)}}}
+
 #+cindex:@command{convert} command
 Upon an export of the SQLite3 data to a CSV file, the program will also send
 the exported data through the Ledger {{{command(convert)}}} command and into
 the ~workfin.ledger~ data file.[fn::Refer to the Ledge manual at Sec. 7.2.1.2
 for the {{{command(convert}}}} command.]  This file is located in the ~ledger/~
 directory below the ~db~ directory.
+
+The {{{command(convert)}}} command uses a ~ledger~ file filled with ~ledger~
+=directives= to associate =payee= 's with =account= 's.  If this =directives=
+file does not exist, then create it.
 
 #+name:csv-sqlite3-export-option
 #+begin_src js +n :tangle index.js
@@ -894,7 +900,8 @@ directory below the ~db~ directory.
       }
 
       if (!fs.existsSync(zero_file)) {
-          fs.writeFileSync(zero_file,''); // needed by the convert command??
+          <<create-zero-file>>
+          //fs.writeFileSync(zero_file,''); // needed by the convert command??
       }
 
       const l_file = fs.existsSync(ledger_file) ? ledger_file : zero_file;
@@ -902,7 +909,7 @@ directory below the ~db~ directory.
       console.log(`converting: ${export_csv_file} to ledger_file: ${ledger_file}`);
 
       fd = fs.openSync(ledger_file, 'as');	// 'as' - Open file for appending in synchronous mode.
-						// The file is created if it does not exist.
+                                                // The file is created if it does not exist.
       ret = spawnSync(
           'ledger',
           [
@@ -935,6 +942,22 @@ directory below the ~db~ directory.
   if (!options.hasOwnProperty('csv'))
       process.exit(0);
 #+end_src
+
+** The Zero Ledger File
+The Zero Ledger File is a ~ledger~ file with directives that associate =payee=
+'s with =account= 's.  It is used by the ~ledger~ {{{command(convert)}}}
+command to parse a CSV file into the ~ledger~ format.  It uses two directives,
+each of which uses a sub-directive, of the form:
+
+#+begin_example
+payee <PAYEE>
+  alias /payee_regex/
+account <FULL:ACCOUNT>
+  payee <PAYEE>
+#+end_example
+
+In the above, the first line establishes a legitimate payee.  The second line
+is a regular expression from the =payee= line that is associated with that payee.
 
 * Process CSV Files
 :PROPERTIES:
@@ -1657,7 +1680,7 @@ The convert command accepts the following options:
 #+attr_texinfo: :indic option
 
 #+cindex:@option{invert} option
-#+cindex:convert option, @{option{invert}
+#+cindex:convert option, @option{invert}
 - --invert :: inverts the amount field
 
               #+cindex:@option{auto-match} option
