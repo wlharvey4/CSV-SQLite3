@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-03 22:42
-#+macro: version Version 0.0.37
+#+date:2019-09-14 10:03
+#+macro: version Version 0.0.38
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -787,10 +787,14 @@ performance.
 #+end_src
 
 * Export SQLite DB Data to CSV File
+
+** =--export= Option
+
+#+cindex:@option{--export} option
 To export the SQLite3 database data to a CSV file, use the
 {{{option(--export)}}} option:
 
-: --export [<csv-file>]
+: --export [<csv-file>] (default is ~workfin.csv~)
 
 : --csv <acct> <year>
 
@@ -798,9 +802,9 @@ The csv filename is optional, with the default being the same as the db file
 (i.e., ~workfin~), with the extension ~.csv~, (i.e., ~workfin.csv~) in the
 ~WORKDB~ directory.  In order to facilitate matching an account to reconcile
 against, the ~--export~ option must be accompanied by the designation of a bank
-accoutn, e.g., =6815= and optionally a year, e.g., =2016=.  These will filter
-the data that is exported from the ~sqlite~ data file and will become the
-account to reconcile against.
+account, e.g., =6815= and a year, e.g., =2016=.  These will filter the data
+that is exported from the ~sqlite~ data file and will become the account to
+reconcile against.
 
 The export is accomplished by executing in a child process the command line
 program:
@@ -811,7 +815,7 @@ The process runs the command, and connects the =STDOUT= stream to the CSV file.
 Since the entire database is exported, the output will truncate the csv file
 upon opening it for writing.  The program will halt after the export.
 
-{{{heading(The ~ledger~ ~convert~ Command)}}}
+** Ledger ~convert~ Command
 
 #+cindex:@command{convert} command
 Upon an export of the SQLite3 data to a CSV file, the program will also send
@@ -820,10 +824,12 @@ the ~workfin.ledger~ data file.[fn::Refer to the Ledge manual at Sec. 7.2.1.2
 for the {{{command(convert}}}} command.]  This file is located in the ~ledger/~
 directory below the ~db~ directory.
 
+#+cindex:directives, Ledger
 The {{{command(convert)}}} command uses a ~ledger~ file filled with ~ledger~
 =directives= to associate =payee= 's with =account= 's.  If this =directives=
-file does not exist, then create it.
+file does not exist, then it will be created.
 
+** Export Code
 #+name:csv-sqlite3-export-option
 #+begin_src js +n :tangle index.js
 
@@ -944,6 +950,7 @@ file does not exist, then create it.
 #+end_src
 
 ** The Zero Ledger File
+#+cindex:@command{convert} command
 The Zero Ledger File is a ~ledger~ file with directives that associate =payee=
 's with =account= 's.  It is used by the ~ledger~ {{{command(convert)}}}
 command to parse a CSV file into the ~ledger~ format.  It uses two directives,
@@ -951,14 +958,98 @@ each of which uses a sub-directive, of the form:
 
 #+begin_example
 payee <PAYEE>
-  alias /payee_regex/
+  alias </PAYEE_REGEX/>
 account <FULL:ACCOUNT>
-  payee <PAYEE>
+  payee </PAYEE_REGEX/>
 #+end_example
 
-In the above, the first line establishes a legitimate payee.  The second line
-is a regular expression from the =payee= line that is associated with that payee.
+#+cindex:directives
+#+cindex:@code{payee}
+#+cindex:@code{account}
+In the above, the first line rewrites the =payee= field to establish a
+legitimate payee.  The =alias= is a regex; anything that matches this directive
+will be turned into the associated =payee=.  The second line uses an account
+and a =payee= directive to specify the proper =account=.  Anything that matches
+the =payee= regex will be assigned the account.
 
+#+name:create-zero-file
+#+begin_src js :tangle ../../workfin/db/ledger/zero.ledger
+payee USPS
+ alias usps
+account Expenses:Office:Postage
+ payee ^(USPS)$
+
+payee Staples
+ alias staples
+payee Ikea
+ alias ikea
+payee Portland Art Museum
+ alias portland art
+payee The Energy Bar
+ alias energy bar
+account Expenses:Office:Supplies
+ payee ^(Staples|Portland Art Museum|Ikea|The Energy Bar)$
+
+payee City of Portland
+ alias city of portland
+account Expenses:Business:Travel
+ payee ^(City of Portland)$
+
+payee RingCentral
+ alias ringcentral
+payee AT&T
+ alias (at&?t)
+payee CenturyLink
+ alias (centurylink|ctl)
+payee NameBright
+ alias namebright
+account Expenses:Business:Communication
+ payee ^(RingCentral|AT\&T|CenturyLink|NameBright)$
+
+payee AVVO
+ alias avvo
+account Expenses:Business:Advertising
+ payee AVVO
+
+payee National Law Foundation
+ alias national law fou
+payee Coursera
+ alias coursera
+payee EdX Inc.
+ alias edx
+account Expenses:Professional:CLE
+ payee ^(Natinoal Law Foundation|Coursera|EdX Inc.)$
+
+payee Costco Gas
+ alias costco gas
+account Expenses:Office:Transportation
+ payee ^(Costco Gas)$
+
+payee American Express
+ alias amex
+payee Citi
+ alias citi
+account CC:Payment
+ payee ^(American Express|Citi)$
+
+payee Apple Store
+ alias apple
+payee Radio Shack
+ alias radioshack
+account Expenses:Office:Supplies
+ payee ^(Apple Store|Radio Shack)$
+
+payee State Bar WA
+ alias interest paid this period
+account Trust:LTAB
+ payee State Bar WA
+
+payee State Bar WA
+ alias ltab
+account Trust:LTAB
+ payee State Bar WA
+
+#+end_src
 * Process CSV Files
 :PROPERTIES:
 :header-args: :comments both
