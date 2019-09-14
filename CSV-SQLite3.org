@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-14 10:03
-#+macro: version Version 0.0.38
+#+date:2019-09-14 14:49
+#+macro: version Version 0.0.39
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -749,10 +749,12 @@ performance.
       try {
           const files = fs.readdirSync(ledger_path);
           files.forEach(file => {
-              const ledger_file = `${ledger_path}/${file}`;
-              const ledger_file_bak = `${WORKBAK}/${file}.${Date.now()}`;
-              fs.renameSync(ledger_file, ledger_file_bak);
-              console.log(`Renamed ${ledger_file} to ${ledger_file_bak}`);
+              if (!/zero/.test(file)) {
+                  const ledger_file = `${ledger_path}/${file}`;
+                  const ledger_file_bak = `${WORKBAK}/${file}.${Date.now()}`;
+                  fs.renameSync(ledger_file, ledger_file_bak);
+                  console.log(`Renamed ${ledger_file} to ${ledger_file_bak}`);
+              }
           });
           fs.rmdirSync(ledger_path);
           console.log(`Removed ${ledger_path} from ${WORKDB}`);
@@ -905,12 +907,8 @@ file does not exist, then it will be created.
           fs.mkdirSync(ledger_path);
       }
 
-      if (!fs.existsSync(zero_file)) {
-          <<create-zero-file>>
-          //fs.writeFileSync(zero_file,''); // needed by the convert command??
-      }
-
-      const l_file = fs.existsSync(ledger_file) ? ledger_file : zero_file;
+      //const l_file = fs.existsSync(ledger_file) ? ledger_file : zero_file;
+      const l_file = zero_file;
 
       console.log(`converting: ${export_csv_file} to ledger_file: ${ledger_file}`);
 
@@ -973,6 +971,7 @@ and a =payee= directive to specify the proper =account=.  Anything that matches
 the =payee= regex will be assigned the account.
 
 #+name:create-zero-file
+#+header: :mkdirp yes
 #+begin_src js :tangle ../../workfin/db/ledger/zero.ledger
 payee USPS
  alias usps
@@ -1018,7 +1017,12 @@ payee Coursera
 payee EdX Inc.
  alias edx
 account Expenses:Professional:CLE
- payee ^(Natinoal Law Foundation|Coursera|EdX Inc.)$
+ payee ^(National Law Foundation|Coursera|EdX Inc.)$
+
+payee State Bar of CA
+ alias state bar of ca
+account Expenses:Professional:License
+ payee ^(State Bar of CA)$
 
 payee Costco Gas
  alias costco gas
@@ -1048,6 +1052,9 @@ payee State Bar WA
  alias ltab
 account Trust:LTAB
  payee State Bar WA
+
+account Assets:Personal
+ payee usb_6151
 
 #+end_src
 * Process CSV Files
@@ -1288,6 +1295,11 @@ records, for example.
           tofrom = (record.trans === 'debit') ? 'to' : 'from';
           record.payee = (record.trans === 'debit') ? `usb_${RegExp.$4}` : `usb_${options.csv[0]}`;
           record.note = `${record.desc2} ${record.desc1}: ${TRANS} ${tofrom} ${record.note}`;
+          if (/>/.test(record.txfr)) {
+              record.payee = `Transfer to ${record.payee} from ${record.acct}`;
+          } else {
+              record.payee = `Transfer to ${record.payee} from usb_${RegExp.$4}`;
+          }
       }
 
       if (record.payee.match(/debit (purchase)\s*-?\s*(visa)? /)) {
@@ -1295,6 +1307,11 @@ records, for example.
           record.desc2 = RegExp.$2;
           record.payee = record.payee.replace(RegExp.lastMatch,'');
           record.note = `${record.desc2} ${record.desc1} ${record.note}`.trimLeft();;
+      }
+
+      // Removed ELECTRONIC WITHDRAWAL for payment to State Bar of CA
+      if (record.payee.match(/^.*(state bar of ca)/)) {
+          record.payee = RegExp.$1;
       }
 
       // web authorized payment
@@ -1904,6 +1921,14 @@ Note that it may be necessary for the output of {{{command(ledger convert)}}}
 to be passed through {{{command(ledger print)}}} a second time if you want to
 match on the new =payee= field.  During the {{{command(ledger convert)}}} run,
 only the original =payee= name as specified in the csv data seems to be used.
+
+* Makefile
+#+name:Makefile
+#+begin_src make :tangle Makefile
+clean-world:
+	rm *.{texi,info,js,json,lock}
+	rm -rf node_modules scripts
+#+end_src
 
 * Index
 :PROPERTIES:
