@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-14 14:49
-#+macro: version Version 0.0.39
+#+date:2019-09-15 21:24
+#+macro: version Version 0.0.40
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -789,7 +789,6 @@ performance.
 #+end_src
 
 * Export SQLite DB Data to CSV File
-
 ** =--export= Option
 
 #+cindex:@option{--export} option
@@ -949,10 +948,67 @@ file does not exist, then it will be created.
 
 ** The Zero Ledger File
 #+cindex:@command{convert} command
-The Zero Ledger File is a ~ledger~ file with directives that associate =payee=
-'s with =account= 's.  It is used by the ~ledger~ {{{command(convert)}}}
-command to parse a CSV file into the ~ledger~ format.  It uses two directives,
-each of which uses a sub-directive, of the form:
+#+cindex:opening entry
+#+cindex:accounts
+The Zero Ledger File is a ~ledger~ file with an opening balance, list of
+accounts, and directives that associate =payee= 's with =account= 's.  It is
+used by the ~ledger~ {{{command(convert)}}} command to preparea ~ledger~ file,
+create initial set of accounts, and parse a CSV file into the ~ledger~ format.
+
+{{{heading(List of Accounts)}}}
+
+1. Expenses---where money goes
+
+2. Assets---where money sits
+
+3. Income---where money comes from
+
+4. Liabilities---where money is owed
+
+5. Equity---where value is
+
+
+Beneath theses top levels, there can be any level of detail required.
+
+{{{heading(Allowable Accounts)}}}
+
+Here are defined some allowable accounts:
+
+#+name:create-zero-file
+#+header: :mkdirp yes
+#+begin_src js :tangle ../../workfin/db/ledger/zero.ledger
+account Expenses
+account Assets
+account Income
+account Liabilities
+account Equity
+
+#+end_src
+
+Use the {{{option(--strict)}}} option to show incampatible accounts
+
+{{{heading(Opening Balances)}}}
+
+The first entry is a set of opening balances.  It will look like this:
+
+#+name:create-zero-file
+#+begin_src js
+2016/01/01 * Opening Balance
+    Expenses				$0
+	Assets:USB:Personal 6151		$0
+	Assets:USB:Business 6815		$0
+    Assets:USB:Trust 6831			$0
+    Assets:USB:Savings			$0
+    Income					$0
+    Liabilities				$0
+	Equity:Opening Balance
+
+#+end_src
+
+{{{heading(Directives and Subdirectives)}}}
+
+The Zero file uses two directives, each of which uses a sub-directive, of the
+form:
 
 #+begin_example
 payee <PAYEE>
@@ -971,8 +1027,7 @@ and a =payee= directive to specify the proper =account=.  Anything that matches
 the =payee= regex will be assigned the account.
 
 #+name:create-zero-file
-#+header: :mkdirp yes
-#+begin_src js :tangle ../../workfin/db/ledger/zero.ledger
+#+begin_src js
 payee USPS
  alias usps
 account Expenses:Office:Postage
@@ -1057,6 +1112,36 @@ account Assets:Personal
  payee usb_6151
 
 #+end_src
+
+{{{heading(An =include= File }}}
+
+Finally, include a file with an =Accounts:Payable= Category:
+
+#+name:create-zero-file
+#+begin_src js
+include accounts_payable.ledger
+#+end_src
+
+** The Accounts Payable File
+
+The ~accounts_payable.ledger~ file contains any outstanding accounts that
+should be included to make the inputted data correct, such as a set of
+outstanding invoices:
+
+#+name:accounts_payable-file
+#+begin_src js :tangle ../../workfin/db/ledger/accounts_payable.ledger
+  2016/01/18 * Clark County Indigent Defense ; Invoice No.s 092--099
+          Assets:Accounts Receivable	$1852.50
+          Income:120703			-$  82.50 ; Invoice No 092
+          Income:140707			-$ 525.00 ; Invoice No 093
+          Income:140709			-$ 397.50 ; Invoice No 094
+          Income:150701			-$  15.00 ; Invoice No 095
+          Income:150704			-$ 742.50 ; Invoice No 096
+          Income:150705			-$   7.50 ; Invoice No 097
+          Income:150706			-$   7.50 ; Invoice No 098
+          Income:150707			-$  75.00 ; Invoice No.099
+#+end_src
+
 * Process CSV Files
 :PROPERTIES:
 :header-args: :comments both
@@ -1275,7 +1360,7 @@ records, for example.
           const checkno = record.trans.replace(/^0*/,'');
           record.checkno  = checkno;
           record.trans   = DEBIT;
-          record.payee  = UNKNOWN;
+          record.payee  = `(${record.checkno}) check`;
           record.note  += `Purchase by check no. ${checkno}`;
           record.desc1  = 'purchase';
           record.desc2  = 'check';
