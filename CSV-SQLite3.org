@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-15 21:24
-#+macro: version Version 0.0.40
+#+date:2019-09-17 12:09
+#+macro: version Version 0.0.41
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -2007,6 +2007,85 @@ to be passed through {{{command(ledger print)}}} a second time if you want to
 match on the new =payee= field.  During the {{{command(ledger convert)}}} run,
 only the original =payee= name as specified in the csv data seems to be used.
 
+* Creating Patch File from Worklog
+After the Sqlite3 database is exported and converted by Ledger, there are
+numerous individual entries that need to be converted but for which there is no
+real data available to help.  An example would be checks.  The check
+information is located in the worklog, so one solution is to parse the worklog
+to obtain check information, then parse the Ledger file to update it.
+
+The program to parse the worklog will be a Node.js script.  It will open a
+stream on the worklog yearly files, then read each line into a data structure
+that will include such things as checks.
+
+#+name:parse-worklog-script
+#+header: :mkdirp yes
+#+header: :shebang "#! /usr/bin/env node"
+#+begin_src js :tangle scripts/parse-worklog.js
+const fs = require('fs');
+const rl = require('readline');
+const pa = require('path');
+
+const USAGE      = 'USAGE: parse-worklog <account (e.g. 6815)> <year (e.g. 2016)>';
+const re_help    = /h|help|usage/;
+const re_account = /6815|6831|6151/;
+const re_year    = /2016|2017|2018|2019/;
+const re_datetime= /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):00$/;
+const re_case    = /^\s+\d{2}..\d{2}$/;
+const re_subjverb= /^\s+(\w\s)+ --- (\w\s)+$/;
+const re_action  = /^\s+(TIME|EXPENSE)$/;
+const re_line    = /^ -{79}$/
+
+const WORKLOG    = process.env.WORKLOG;
+if (!WORKLOG) {
+    console.error('Need to define the environment variable for WORKLOG');
+    process.exit(1);
+}
+
+const account    = process.argv[2], year = process.argv[3];
+
+if (re_help.test(account)) {
+    console.error(USAGE);
+    process.exit(0);
+}
+
+if (!re_account.test(account)) {
+    console.error('Need an account (e.g. 6815)');
+    console.error(USAGE);
+    process.exit(1);
+} else {
+    console.log(`Account: ${account}`);
+}
+
+if (!re_year.test(year)) {
+    console.error('Need a year (e.g. 2016)');
+    console.error(USAGE);
+    process.exit(1);
+} else {
+    console.log(`year: ${year}`);
+}
+
+const worklog = pa.join(WORKLOG, `worklog.${year}.otl`);
+
+const interface = rl.createInterface({
+    input: fs.createReadStream(worklog, "utf-8"),
+});
+
+let line_no = 0;
+interface.on('line', (line) => {
+    console.log(`[${line_no}] ${line}`);
+    
+});
+#+end_src
+
+#+name:link-parse-worklog-script-into-workbin
+#+header: :results output :exports both
+#+begin_src sh
+  ln -f $PWD/scripts/parse-worklog.js $WORKBIN/parse-worklog
+#+end_src
+
+#+RESULTS: link-parse-worklog-script-into-workbin
+
 * Makefile
 #+name:Makefile
 #+begin_src make :tangle Makefile
@@ -2039,6 +2118,9 @@ clean-world:
 #+macro: option @@texinfo:@option{@@$1@@texinfo:}@@
 #+macro: command @@texinfo:@command{@@$1@@texinfo:}@@
 
+* Options                                                          :noindent:
+#+startup: indent
+#+options: H:4 ':t
 * Export Settings                                                  :noexport:
 #+texinfo_filename:csv-sqlite3.info
 #+texinfo_class: info
@@ -2052,4 +2134,6 @@ clean-world:
 * Local Variables                                                  :noexport:
 # Local Variables:
 # time-stamp-pattern:"8/^\\#\\+date:%:y-%02m-%02d %02H:%02M$"
+# eval: (auto-fill-mode)
+# eval: (column-number-mode)
 # End:
