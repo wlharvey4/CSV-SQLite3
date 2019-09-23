@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-17 12:09
-#+macro: version Version 0.0.41
+#+date:2019-09-22 18:02
+#+macro: version Version 0.0.42
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -2022,60 +2022,126 @@ that will include such things as checks.
 #+header: :mkdirp yes
 #+header: :shebang "#! /usr/bin/env node"
 #+begin_src js :tangle scripts/parse-worklog.js
-const fs = require('fs');
-const rl = require('readline');
-const pa = require('path');
+  const fs = require('fs');
+  const rl = require('readline');
+  const pa = require('path');
 
-const USAGE      = 'USAGE: parse-worklog <account (e.g. 6815)> <year (e.g. 2016)>';
-const re_help    = /h|help|usage/;
-const re_account = /6815|6831|6151/;
-const re_year    = /2016|2017|2018|2019/;
-const re_datetime= /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):00$/;
-const re_case    = /^\s+\d{2}..\d{2}$/;
-const re_subjverb= /^\s+(\w\s)+ --- (\w\s)+$/;
-const re_action  = /^\s+(TIME|EXPENSE)$/;
-const re_line    = /^ -{79}$/
+  const USAGE      = 'USAGE: parse-worklog <account (e.g. 6815)> <year (e.g. 2016)>';
+  const re_help    = /h|help|usage/;
+  const re_account = /6815|6831|6151/;
+  const re_year    = /2016|2017|2018|2019/;
+  const re_datetime= /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):00$/;
+  const re_case    = /^\s+\d{2}..\d{2}$/;
+  const re_subjverb= /^\s+[\w\s]+ --- [\w\s]+$/;
+  const re_message = /^\s.{2,78}$/;
+  const re_action  = /^\s+(TIME|EXPENSE|TRUST|INVOICE|PAYMENT|\[.\] TODO|\[.\] HEARING)$/;
+  const re_line    = /^ -{78}$/;
+  const re_empty   = new RegExp('');
 
-const WORKLOG    = process.env.WORKLOG;
-if (!WORKLOG) {
-    console.error('Need to define the environment variable for WORKLOG');
-    process.exit(1);
-}
+  const WORKLOG    = process.env.WORKLOG;
+  if (!WORKLOG) {
+      console.error('Need to define the environment variable for WORKLOG');
+      process.exit(1);
+  }
 
-const account    = process.argv[2], year = process.argv[3];
+  // command line arguments:
+  // [2] := usb account, e.g., 6815
+  // [3] := year, e.g. 2016
+  const account    = process.argv[2], year = process.argv[3];
 
-if (re_help.test(account)) {
-    console.error(USAGE);
-    process.exit(0);
-}
+  // asking for help/usage
+  if (re_help.test(account)) {
+      console.error(USAGE);
+      process.exit(0);
+  }
 
-if (!re_account.test(account)) {
-    console.error('Need an account (e.g. 6815)');
-    console.error(USAGE);
-    process.exit(1);
-} else {
-    console.log(`Account: ${account}`);
-}
+  // make sure the proper arguments were sent
+  if (!re_account.test(account)) {
+      console.error('Need an account (e.g. 6815)');
+      console.error(USAGE);
+      process.exit(1);
+  } else {
+      console.log(`Account: ${account}`);
+  }
 
-if (!re_year.test(year)) {
-    console.error('Need a year (e.g. 2016)');
-    console.error(USAGE);
-    process.exit(1);
-} else {
-    console.log(`year: ${year}`);
-}
+  if (!re_year.test(year)) {
+      console.error('Need a year (e.g. 2016)');
+      console.error(USAGE);
+      process.exit(1);
+  } else {
+      console.log(`year: ${year}`);
+  }
 
-const worklog = pa.join(WORKLOG, `worklog.${year}.otl`);
+  // use the command line arguments to find the worklog file
+  const worklog = pa.join(WORKLOG, `worklog.${year}.otl`);
 
-const interface = rl.createInterface({
-    input: fs.createReadStream(worklog, "utf-8"),
-});
+  // create the readline interface
+  const interface = rl.createInterface({
+      input: fs.createReadStream(worklog, "utf-8"),
+  });
 
-let line_no = 0;
-interface.on('line', (line) => {
-    console.log(`[${line_no}] ${line}`);
-    
-});
+  const logline = (re, line_no, line) => {
+      ok = re.test(line);
+      console.log(`${ok ? 'OK' : 'NOT OK'} [${line_no}] ${line}`);
+  }
+
+  let record_no = 0, line_no = 0;
+  let ok = true;
+  let wl = '';
+
+  interface.on('line', (line) => {
+      if (!ok) {process.exit(1)}
+      switch (line_no) {
+          case 0:
+          console.log(`RECORD NO ${record_no}`);
+          logline(re_datetime, line_no, line);
+          line_no++;
+          break;
+
+          case 1:
+          logline(re_case, line_no, line);
+          line_no++;
+          break;
+
+          case 2:
+          logline(re_subjverb, line_no, line);
+          line_no++;
+          break;
+
+          case 3:
+          logline(re_action, line_no, line);
+          line_no++;
+          break;
+
+          case 4:
+          logline(re_line, line_no, line);
+          line_no++;
+          break;
+
+          case 5:
+          if (!re_line.test(line)) {
+              logline(re_message, line_no, line);
+          } else {
+              line_no++;
+              logline(re_line, line_no, line);
+              line_no++;
+          }
+          break;
+
+          case 6:
+          break;
+
+          case 7:
+          logline(re_datetime, line_no, line);
+          line_no++;
+          break;
+
+          case 8:
+          logline(re_empty, line_no, line);
+          console.log();
+          line_no = 0, record_no++;
+      }
+  });
 #+end_src
 
 #+name:link-parse-worklog-script-into-workbin
