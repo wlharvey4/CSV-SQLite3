@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-22 18:02
-#+macro: version Version 0.0.42
+#+date:2019-09-26 12:26
+#+macro: version Version 0.0.43
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -2151,6 +2151,46 @@ that will include such things as checks.
 #+end_src
 
 #+RESULTS: link-parse-worklog-script-into-workbin
+* Creating the LogReader
+The LogReader is an object that reads records in log files.  It receives the
+name of the log file to read, and an array of regular expressions, one for each
+line of the log file, with the final one being the record separator.  The
+LogReader will read each record of the file, checking each line for conformance
+with the regular expression for that line, and adding each conforming record to
+an array, and sending each non-conforming record to a special log file for
+review.
+
+Each record of the log file will be an object with key-value pairs, including
+one entry with the full log entry.
+
+** LogReader Project Setup
+
+#+caption:LogReader Project Setup
+#+name:logreader-project-setup
+#+header: :results output :exports both
+#+begin_src sh
+cd LogReader
+yarn init -yp
+yarn add --dev jest
+#+end_src
+
+** LogReader Test File
+
+#+caption:LogReader Test File
+#+name:logreader-test-file
+#+header: :mkdirp yes
+#+begin_src js -n :tangle LogReader/tests/logreader.test.js
+// logreader.test.js
+#+end_src
+
+** LogReader Implementation File
+
+#+caption:LogReader Implementation
+#+name:logreader-implementation
+#+header: :mkdirp yes
+#+begin_src js -n :tangle LogReader/src/logreader.js
+// logreader.js
+#+end_src
 
 * Makefile
 #+name:Makefile
