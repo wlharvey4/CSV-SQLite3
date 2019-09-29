@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-26 12:26
-#+macro: version Version 0.0.43
+#+date:2019-09-29 09:36
+#+macro: version Version 0.0.44
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -468,25 +468,29 @@ The database column names are identical to the SQL column names except for
 * CSV-SQLite3 Usage
 - ~csv-sqlite3 --csv <usb-acct> <year> [--attach <db>]
 
-  - <usb-acct> is one of: =6815|6831|6151= 
+  - <usb-acct> is one of: =6815|6831|6151=
 
-  - <year> is one of =2016|2017|2018= 
+  - <year> is one of =2016|2017|2018=
 
   - ~--attach <db>~ is optional; the default is ~workfin.sqlite~, otherwise
-    ~db.sqlite~
+    ~<db>.sqlite~
 
   - Transform downloaded data and save in a new CSV file and a new sqlite3
     database.  The source CSV files are found at:
 
-    ~$WORKFIN/sources/usb/usb_{6815|6831|6151}/{2016|2017|2018}/usb_6815--2016.csv~
+    ~$WORKFIN/src/usb/usb_{6815|6831|6151}/{2016|2017|2018}/usb_6815--2016.csv~
 
   - The transformed CSV files are found at:
 
-    ~$WORKFIN/db/csv/usb_{6815|6831|6151}__{2016|2017|2018}.csv~
+    ~$WORKFIN/csv/usb_{6815|6831|6151}__{2016|2017|2018}.csv~
 
   - The new SQLite3 database is found at:
 
     ~$WORKFIN/db/workfin.sqlite~
+
+  - The exported database file in CSV format will be found at:
+
+    ~$WORKFIN/csv/workfin.csv~
 
 - ~csv-sqlite3 --delete [<db>]~ ::
 
@@ -663,7 +667,7 @@ not exist, it will be created.  If the user requests that a database file be
 deleted, it will be backed up first, then deleted.
 
 The user can attach to a database file (either a specified file or the default
-file, defined as ~$WORKFIN/workfin.db~), or delete a specified database file
+file, defined as ~$WORKFIN/db/workfin.sqlite~), or delete a specified database file
 and the associated CSV file exported from the database data.  All deleted files
 are backed up to a backup directory that needs to be defined as a shell
 environment variable: =WORKBAK=.  The backed-up files are appended with the
@@ -684,85 +688,147 @@ performance.
 #+header: :noweb yes
 #+begin_src js +n :tangle index.js
 
-  if ( !process.env.WORKDB ) {
-      console.error('You must define a shell variable named WORKDB as a base directory for the database file.');
+  if ( !process.env.WORKDB ) { // $WORKFIN/db
+      console.error('You must define a shell variable named WORKDB as a base directory for the .sqlite database file.');
+      process.exit(1);
+  }
+  if ( !process.env.WORKCSV ) { // $WORKFIN/csv
+      console.error('You must define a shell variable named WORKCSV as a base directory for the .csv files.');
+      process.exit(1);
+  }
+  if ( !process.env.WORKLEDGER ) { // $WORKFIN/ledger
+      console.error('You must define a shell variable named WORKLEDGER as a base directory for the .ledger files.');
+      process.exit(1);
+  }
+  if ( !process.env.WORKBAK) { // $WORK/workbak
+      console.error('You must define a shell variable named WORKBAK as a backup directory for storing deleted files.');
       process.exit(1);
   }
 
-  const WORKDB = process.env.WORKDB; // base directory for db
-  const DB_DEFAULT = 'workfin';
-  const db_file = options.attach ? options.attach :    // for attaching
-                  options.delete ? options.delete :    // for deletion
-                  DB_DEFAULT;  	       	         // use the default name
-  const db_path = `${WORKDB}/${db_file}.sqlite`;
-  const exported_csv = `${WORKDB}/${db_file}.csv`;
+  const WORKDB     = process.env.WORKDB;     // base directory for .sqlite db files
+  const WORKCSV    = process.env.WORKCSV     // base directory for .csv files
+  const WORKLEDGER = process.env.WORKLEDGER; // base directory for .ledger files
+  const WORKBAK    = process.env.WORKBAK;    // base directory for storing deleted files
+
+  const DB_DEFAULT = 'workfin';	       // default sqlite db name
+  const db_file = options.attach ? options.attach :    // use provided option for attaching
+                  options.delete ? options.delete :    // use provided option for deletion
+                  DB_DEFAULT;  	       	         // if no provided option, use the default name
+
+  const db_path = path.format({
+      path: WORKDB,
+      name: db_file,
+      ext: '.sqlite'
+  });
   console.log(`db_path: ${db_path}`);
-  console.log(`exported_csv: ${exported_csv}`);
+
+  const csv_path = path.format({
+      dir: WORKCSV,
+      name: db_file,
+      ext: '.csv'
+  });
+  console.log(`csv_path: ${csv_path}`);
 
   /*---DELETE--*/
   if (options.hasOwnProperty('delete')) {
-      if (!process.env.WORKBAK) {
-          console.error('You must define a shell variable named WORKBAK as a backup directory before deleting a database file.');
-          process.exit(1);
-      }
-      const WORKBAK = process.env.WORKBAK;
 
-      /* DB */
-      const db_path_bak = `${WORKBAK}/${db_file}.sqlite.${Date.now()}`;
-      const exported_csv_bak = `${WORKBAK}/$db_file}.csv.${Date.now()}`;
+      const WORKBAK_DB = path.format({
+          dir: WORKBAK
+          name: 'db'
+      });
+      if (!fs.existsSync(WORKBAK_DB)) {
+          fs.mkdirSync(WORKBAK_DB, {recursive: true});
+      }
+
+      const WORKBAK_CSV= path.format({
+          dir:   WORKBAK,
+          name: 'csv'
+      });
+      if (!fs.existsSync(WORKBAK_CSV)) {
+          fs.mkdirSync(WORKBAK_CSV, {recursive: true});
+      }
+
+      const WORKBAK_LEDGER = path.format({
+          dir:   WORKBAK
+          :name: 'ledger'
+      });
+      if (!fs.existsSync(WORKBAK_LEDGER)) {
+          fs.mkdirSync(WORKBAK_LEDGER, {recursive: true});
+      }
+
+      // Backup workfin.sqlite, workfin.csv
+      const db_path_bak = path.format({
+          dir: WORKBAK_DB,
+          name: db_file,
+          ext: `.sqlite.${Date.now()}`
+      });
+
+      const csv_path_bak = path.format({
+          dir: WORKBAK_CSV,
+          name: db_file,
+          ext: `.csv.${Date.now()}`
+      });
+
       try {
           fs.renameSync(db_path, db_path_bak);
           console.error(`Renamed ${db_path} to ${db_path_bak}`);
-          fs.renameSync(exported_csv, exported_csv_bak);
-          console.error(`Renamed ${exported_csv} to ${exported_csv_bak}`);
+          fs.renameSync(csv_path, csv_path_bak);
+          console.error(`Renamed ${csv_path} to ${csv_path_bak}`);
       } catch (err) {
           if (err.code === 'ENOENT')
-              console.log(`file ${db_path} and/or ${exported_csv} did not exist; ignoring.`);
+              console.log(`file ${db_path} and/or ${csv_path} did not exist; ignoring.`);
           else {
               throw err;
           }
       }
 
-      /* CSV */
-      const db_csv_path = `${WORKDB}/csv`;
+      // Backup all .csv files
       try {
-          const files = fs.readdirSync(db_csv_path);
+          const files = fs.readdirSync(WORKCSV);
           files.forEach(file => {
-              const db_csv_path_file = `${WORKDB}/csv/${file}`;
-              const db_csv_path_bak  = `${WORKBAK}/${file}.${Date.now()}`;
+              const db_csv_path_file = path.format({
+                  dir: WORKCSV,
+                  name: file
+              });
+              const db_csv_path_bak  = path.format({
+                  dir: WORKBAK_CSV,
+                  name: file,
+                  ext: `.${Date.now()}`
+              });
               fs.renameSync(db_csv_path_file, db_csv_path_bak);
               console.log(`Renamed ${db_csv_path_file} to ${db_csv_path_bak}`);
           });
-          fs.rmdirSync(db_csv_path);
+
       } catch (err) {
           if (err.code === 'ENOENT') {
               console.log(`${db_csv_path} probably does not exist`);
-          } else if (err.code === 'ENOTEMPTY') {
-              console.error(`${db_csv_path} does not seem to be empty`);
           } else {
               throw err;
           }
       }
 
       /* Ledger */
-      const ledger_path = `${WORKDB}/ledger`;
       try {
-          const files = fs.readdirSync(ledger_path);
+          const files = fs.readdirSync(WORKLEDGER);
           files.forEach(file => {
-              if (!/zero/.test(file)) {
-                  const ledger_file = `${ledger_path}/${file}`;
-                  const ledger_file_bak = `${WORKBAK}/${file}.${Date.now()}`;
+              if (!/zero/.test(file)) { // don't backup the zero ledger file
+                  const ledger_file = path.format({
+                      dir: WORKLEDGER,
+                      name: file
+                  });
+                  const ledger_file_bak = path.format({
+                      dir: WORKBAK_LEDGER,
+                      name: file,
+                      ext: `.${Date.now()}`
+                  });
                   fs.renameSync(ledger_file, ledger_file_bak);
                   console.log(`Renamed ${ledger_file} to ${ledger_file_bak}`);
               }
           });
-          fs.rmdirSync(ledger_path);
-          console.log(`Removed ${ledger_path} from ${WORKDB}`);
+
       } catch (err) {
           if (err.code === 'ENOENT') {
               console.log(`${ledger_path} probably does not exist`);
-          } else if (err.code === 'ENOTEMPTY') {
-              console.error(`${ledger_path} does not seem to be empty`);
           } else {
               throw err;
           }
