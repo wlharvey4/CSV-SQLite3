@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-29 21:37
-#+macro: version Version 0.0.46
+#+date:2019-09-29 22:21
+#+macro: version Version 0.0.47
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -434,8 +434,8 @@ The database column names are identical to the SQL column names except for
     ]
 
     const DB_COLS = [
-        'date',
         'acct',
+        'date',
         'trans',
         'checkno',
         'txfr',
@@ -1317,9 +1317,8 @@ Node.js modules:
 
 ** Set Up CSV-Stringify
 This section receives the transformed records from the Transform function and
-writes them to new csv files.  The new csv files will be located close to the
-database files, so there should be an environment variable named =WORKDB=,
-pointing to, for example, ~$WORK/workfin/db~.  A file will be called, for
+writes them to new csv files.  The new csv files will be located in the
+=WORKCSV= directory, e.g., ~WORK/workfin/csv~.  A file will be called, for
 example, ~usb_6815__2016.csv~.  Notice that this file name uses two
 underscores, whereas the source files use two dashes; in all other respects,
 they are the same.
@@ -1328,14 +1327,13 @@ they are the same.
 #+begin_src js +n :tangle index.js
   const stringifier = csv.stringify({
       header: true,
-      DB_COLS,
+      columns: DB_COLS,
   });
 
-  const acct = options.csv[0],
-        year = options.csv[1];
+  const [acct,year] = options.csv;
   const usb_acct = `usb_${acct}`;
-
   const usb_acct_year = `${usb_acct}__${year}.csv`;
+
   const csv_path_file = path.join(WORKCSV, usb_acct_year);
   console.log(`CSV PATH FILE: ${csv_path_file}`);
 
