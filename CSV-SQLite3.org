@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-29 22:21
-#+macro: version Version 0.0.47
+#+date:2019-09-29 23:44
+#+macro: version Version 0.0.48
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -2275,6 +2275,25 @@ cd LogReader
 yarn init -yp
 yarn add --dev jest
 #+end_src
+
+#+caption: Add Scripts Tests to package.json
+#+name:add-scripts-tests-to-package.json
+#+header: :results output :exports both
+#+header: :dir LogReader
+#+BEGIN_SRC js
+const fs = require('fs');
+const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+p.scripts = {"tests": "jest"};
+fs.writeFileSync('package.json', JSON.stringify(p, null, 2));
+#+END_SRC
+
+#+caption:Package.json with Scripts Tests
+#+name:cat-package.json-with-scripts-tests
+#+header: :dir LogReader
+#+header: :results output :exports both
+#+BEGIN_SRC sh
+cat package.json
+#+END_SRC
 
 ** LogReader Test File
 
