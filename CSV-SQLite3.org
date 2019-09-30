@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-29 09:36
-#+macro: version Version 0.0.44
+#+date:2019-09-29 19:49
+#+macro: version Version 0.0.45
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -502,7 +502,10 @@ The database column names are identical to the SQL column names except for
   Set a log level (default is =warn=)
 
 * Create the Project
-This project's dependencies are the following Node.js modules:
+
+{{{heading(External Dependencies)}}}
+
+This project's external dependencies are the following Node.js modules:
 
 - ~command-line-args~ :: https://github.com/75lb/command-line-args#readme
 - ~command-line-usage~ :: https://github.com/75lb/command-line-usage
@@ -510,13 +513,26 @@ This project's dependencies are the following Node.js modules:
 - ~sqlite3~ :: https://github.com/mapbox/node-sqlite3/wiki
 - ~accounting~ :: http://openexchangerates.github.io/accounting.js/
 
+
+{{{heading(Node.js Dependencies)}}}
+
+This project's Node.js internal dependencies are the following:
+
+- ~File System (fs)~ :: File System for working with files
+
+- ~Path (path)~ :: Utilities for working with file and directory paths
+
+- ~Utilities (util)~ :: Utilities for inspecting objects
+
+- ~Assert (assert)~ :: Assertion functions for verifying invariants
+
 #+name:tangle-CSV-SQLite3-project
 #+begin_src emacs-lisp :results output :exports results
 (org-babel-tangle-file "CSV-SQLite3.org")
 #+end_src
 
-** Install the Dependencies
-The following Node dependency modules are installed:
+** Install the CSV-SQLite3 Package and Dependencies
+Create the CSV-SQLite3 project and install the Node.js package dependencies:
 
 - ~command-line-ars~
 - ~command-line-usage~
@@ -528,29 +544,26 @@ The following Node dependency modules are installed:
 #+name:create-CSV-SQLite3-project
 #+header: :exports both :results output
 #+begin_src sh
-yarn --yes init
+yarn --yes --private init
 yarn add command-line-args command-line-usage csv sqlite3 accounting
 #+end_src
 
-** Establish some Basic Dependencies
+** Import the Node.js Dependencies
 :PROPERTIES:
 :header-args: :comments both
 :END:
-In addition to the foregoing dependencies, this project uses the following
-Node.js built-in modules:
 
-- ~fs~ :: File System for working with files
-
-- ~path~ :: Utilities for working with file and directory paths
-
-- ~util~ :: Utilities for inspecting objects
+Create the base file ~index.js~ and import the project's dependencies.
 
 #+name:csv-sqlite3-dependencies
 #+header: :mkdirp yes
 #+begin_src js -n :tangle index.js
-const fs   = require('fs');
-const path = require('path');
-const util = require('util');
+/* index.js */
+
+const fs     = require('fs');
+const path   = require('path');
+const util   = require('util');
+const assert = require('assert').strict;
 
 const cl_args  = require('command-line-args');
 const cl_usage = require('command-line-usage');
@@ -558,8 +571,6 @@ const csv      = require('csv');
 const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
 const accounting = require('accounting');
 #+end_src
-
-#+RESULTS: csv-sqlite3-dependencies
 
 ** Establish Database Table Name and Columns
 #+name:database-table-columns
@@ -579,14 +590,15 @@ usage message triggered by requesting the option =--help=.
 #+cindex:command-line usage
 #+cindex:usage
 #+cindex:@command{command-line-usage}
+#+cindex:@code{cl_usage()}
 This section generates a usage message activated by the =--help= option.  It
-uses the [[option-defs-variable][~options_defs~]] object created in the code below.
+uses the [[option-defs-variable][~options_defs~]] object created in the code in the next section.
 
 #+name:csv-sqlite3-usage
 #+begin_src js
 const sections = [
     {
-        header: 'CSV-SQLite',
+        header: 'CSV-SQLite3',
         content: 'Processes raw usb csv files into a form usable by SQLite3'
     },
     {
@@ -614,17 +626,37 @@ database can be deleted here as well using the option =--delete <db>=, with a
 backup being saved in the =WORKBAK= directory wtih the unix time suffixed to
 the end.
 
-Initially, the database should be creatable and deleteable.
+{{{subheading(Usage)}}}
+
+Obtain usage information using the {{{option(--help)}}} option:
 
 : csvsqlite --help | -h
+
+{{{subheading(Choose the CSV File)}}}
+
+For non-delete commands, identify the CSV file to transform via the =--csv=
+option:
+
+: csvsqlite --csv | -c 6815|6831 2004...2019
+
+{{{subheading(Attach and Delete a Database)}}}
+
+The database is attachable (it will be created automatically if it does not
+exist), and deleteable:
 
 : csvsqlite --attach <db> | -a <db-name>
 
 : csvsqlite --delete <db> | -d <db-name>
 
-Also, identify the CSV file to transform via the =--csv= option:
+{{{subheading(Export the SQLite3 data to CSV)}}}
 
-: csvsqlite --csv | -c 6815|6831 2004...2019
+Export SQLite3 data into a CSV file of the same name:
+
+: csvsqlite --export <db> | -e <db-name>
+
+{{{subheading(Set a Log Level)}}}
+
+: csvsqlite --log-level <value:0..10> | -l <value:0..10>
 
 <<option-defs-variable>>
 #+name:csv-sqlite3-command-line-arg-processing
@@ -855,19 +887,21 @@ performance.
 #+end_src
 
 * Export SQLite DB Data to CSV File
+Once data has been downloaded from the bank's web site and imported into the
+sqlite3 database, it must be converted into a Ledger file.  This is
+accomplished using the {{{option(--export)}}} option.
+
 ** =--export= Option
 
 #+cindex:@option{--export} option
-To export the SQLite3 database data to a CSV file, use the
+To export the SQLite3 database data to CSV and Ledger files, use the
 {{{option(--export)}}} option:
 
-: --export [<csv-file>] (default is ~workfin.csv~)
-
-: --csv <acct> <year>
+: --export [<csv-file>=workfin.csv] --csv <acct> <year>
 
 The csv filename is optional, with the default being the same as the db file
 (i.e., ~workfin~), with the extension ~.csv~, (i.e., ~workfin.csv~) in the
-~WORKDB~ directory.  In order to facilitate matching an account to reconcile
+~WORKCSV~ directory.  In order to facilitate matching an account to reconcile
 against, the ~--export~ option must be accompanied by the designation of a bank
 account, e.g., =6815= and a year, e.g., =2016=.  These will filter the data
 that is exported from the ~sqlite~ data file and will become the account to
@@ -878,9 +912,10 @@ program:
 
 : sqlite3 -header -csv db sql-statements
 
-The process runs the command, and connects the =STDOUT= stream to the CSV file.
-Since the entire database is exported, the output will truncate the csv file
-upon opening it for writing.  The program will halt after the export.
+The child process runs the {{{command(sqlite3)}}} command, and connects the
+=STDOUT= stream to the target CSV file.  Since the entire database contents for
+a given year and account are exported, the output will truncate the target CSV
+file upon opening it for writing.  The program will halt after the export.
 
 ** Ledger ~convert~ Command
 
@@ -889,7 +924,7 @@ Upon an export of the SQLite3 data to a CSV file, the program will also send
 the exported data through the Ledger {{{command(convert)}}} command and into
 the ~workfin.ledger~ data file.[fn::Refer to the Ledge manual at Sec. 7.2.1.2
 for the {{{command(convert}}}} command.]  This file is located in the ~ledger/~
-directory below the ~db~ directory.
+directory below the ~workfin~ directory.
 
 #+cindex:directives, Ledger
 The {{{command(convert)}}} command uses a ~ledger~ file filled with ~ledger~
@@ -906,12 +941,16 @@ file does not exist, then it will be created.
       const export_csv = options['export'] || db_file;
       console.log(`exporting to ${export_csv}...`);
 
-      const export_csv_path = path.join(`${WORKDB}`, 'csv');
-      if (!fs.existsSync(export_csv_path)) {
-          fs.mkdirSync(export_csv_path);
-          console.log(`Created ${export_csv_path}`);
+      const export_csv_dir = WORKCSV;
+      if (!fs.existsSync(export_csv_dir)) {
+          fs.mkdirSync(export_csv_dir);
+          console.log(`Created ${export_csv_dir}`);
       }
-      const export_csv_file = `${export_csv_path}/${export_csv}.csv`;
+      const export_csv_path = path.format({
+          dir: export_csv_dir,
+          name: export_csv,
+          ext: '.csv'
+      });
 
       // --export must be accompanied by --csv <acct> <year> of the proper values
       if (!options.hasOwnProperty('csv')) {
@@ -929,10 +968,10 @@ file does not exist, then it will be created.
       const usb_acct = `usb_${_acct}`;
 
       //'as' - Open file for appending in synchronous mode. The file is created if it does not exist.
-      let fd = fs.openSync(export_csv_file,'as');
-      const size = fs.statSync(export_csv_file).size;
+      let fd = fs.openSync(export_csv_path,'as');
+      const size = fs.statSync(export_csv_path).size;
       const header = size === 0 ? 'header' : 'noheader';
-      console.log(`export_csv_file: ${export_csv_file}`);
+      console.log(`export_csv_path: ${export_csv_path}`);
 
       const sql = `
   SELECT ${EXPORT_DB_COLS.join(',')}
@@ -965,25 +1004,33 @@ file does not exist, then it will be created.
 
 
       /* CONVERT CSV TO LEDGER */
-      const ledger_path = `${process.env.WORKDB}/ledger`;
-      const ledger_file = `${ledger_path}/${export_csv}.exported.ledger`;
-      const zero_file   = `${ledger_path}/zero.ledger`;
-      if (!fs.existsSync(ledger_path)) {
-          fs.mkdirSync(ledger_path);
+      const ledger_dir = WORKLEDGER;
+      const ledger_path = path.format({
+          dir: ledger_dir,
+          name: export_csv,
+          ext: '.exported.ledger'
+      });
+      const zero_file = path.format({
+          dir: ledger_dir,
+          name: 'zero',
+          ext: '.ledger'
+      });
+      if (!fs.existsSync(ledger_dir)) {
+          fs.mkdirSync(ledger_dir);
       }
 
-      //const l_file = fs.existsSync(ledger_file) ? ledger_file : zero_file;
+      //const l_file = fs.existsSync(ledger_path) ? ledger_path : zero_file;
       const l_file = zero_file;
 
-      console.log(`converting: ${export_csv_file} to ledger_file: ${ledger_file}`);
+      console.log(`converting: ${export_csv_path} to ledger_path: ${ledger_path}`);
 
-      fd = fs.openSync(ledger_file, 'as');	// 'as' - Open file for appending in synchronous mode.
-                                                // The file is created if it does not exist.
+      fd = fs.openSync(ledger_path, 'as');	// 'as' - Open file for appending in synchronous mode.
+                                                  // The file is created if it does not exist.
       ret = spawnSync(
           'ledger',
           [
               'convert',
-              `${export_csv_file}`,
+              `${export_csv_path}`,
               '--invert',
               '--input-date-format=%Y-%m-%d',
               `--account=Assets:${DB_ACCTS[_acct]}`,
@@ -996,7 +1043,6 @@ file does not exist, then it will be created.
               stdio: [0,fd,2],
           }
       );
-
 
       if (ret.error) {
           console.log(`status: ${ret.status}\tsignal: ${ret.signal}`)
@@ -1018,7 +1064,7 @@ file does not exist, then it will be created.
 #+cindex:accounts
 The Zero Ledger File is a ~ledger~ file with an opening balance, list of
 accounts, and directives that associate =payee= 's with =account= 's.  It is
-used by the ~ledger~ {{{command(convert)}}} command to preparea ~ledger~ file,
+used by the ~ledger~ {{{command(convert)}}} command to prepare a ~ledger~ file,
 create initial set of accounts, and parse a CSV file into the ~ledger~ format.
 
 {{{heading(List of Accounts)}}}
