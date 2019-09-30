@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-29 19:49
-#+macro: version Version 0.0.45
+#+date:2019-09-29 21:37
+#+macro: version Version 0.0.46
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -738,7 +738,9 @@ performance.
   }
 
   const WORKDB     = process.env.WORKDB;     // base directory for .sqlite db files
+  if (!fs.existsSync(WORKDB)) { fs.mkdirSync(WORKDB); }
   const WORKCSV    = process.env.WORKCSV     // base directory for .csv files
+  if (!fs.existsSync(WORKCSV)) { fs.mkdirSync(WORKCSV); }
   const WORKLEDGER = process.env.WORKLEDGER; // base directory for .ledger files
   const WORKBAK    = process.env.WORKBAK;    // base directory for storing deleted files
 
@@ -748,7 +750,7 @@ performance.
                   DB_DEFAULT;  	       	         // if no provided option, use the default name
 
   const db_path = path.format({
-      path: WORKDB,
+      dir: WORKDB,
       name: db_file,
       ext: '.sqlite'
   });
@@ -765,7 +767,7 @@ performance.
   if (options.hasOwnProperty('delete')) {
 
       const WORKBAK_DB = path.format({
-          dir: WORKBAK
+          dir: WORKBAK,
           name: 'db'
       });
       if (!fs.existsSync(WORKBAK_DB)) {
@@ -781,8 +783,8 @@ performance.
       }
 
       const WORKBAK_LEDGER = path.format({
-          dir:   WORKBAK
-          :name: 'ledger'
+          dir:   WORKBAK,
+          name: 'ledger'
       });
       if (!fs.existsSync(WORKBAK_LEDGER)) {
           fs.mkdirSync(WORKBAK_LEDGER, {recursive: true});
@@ -1088,7 +1090,7 @@ Here are defined some allowable accounts:
 
 #+name:create-zero-file
 #+header: :mkdirp yes
-#+begin_src js :tangle ../../workfin/db/ledger/zero.ledger
+#+begin_src js :tangle ../../workfin/ledger/zero.ledger
 account Expenses
 account Assets
 account Income
@@ -1241,7 +1243,7 @@ should be included to make the inputted data correct, such as a set of
 outstanding invoices:
 
 #+name:accounts_payable-file
-#+begin_src js :tangle ../../workfin/db/ledger/accounts_payable.ledger
+#+begin_src js :tangle ../../workfin/ledger/accounts_payable.ledger
   2016/01/18 * Clark County Indigent Defense ; Invoice No.s 092--099
           Assets:Accounts Receivable	$1852.50
           Income:120703			-$  82.50 ; Invoice No 092
@@ -1333,19 +1335,9 @@ they are the same.
         year = options.csv[1];
   const usb_acct = `usb_${acct}`;
 
-  const csv_file = `${usb_acct}__${year}.csv`;
-  const csv_path = `${process.env.WORKDB}/csv`;
-  const csv_path_file = `${csv_path}/${csv_file}`;
-  if (! fs.existsSync(csv_path)) {
-      try {
-          fs.mkdirSync(csv_path);
-          console.log(`CSV FILE PATH: ${csv_path} has been created`);
-      } catch (err) {
-          console.error(err.message);
-          process.exit(1);
-      }
-  }
-  console.log(`CSV FILE PATH: ${csv_path} exists`);
+  const usb_acct_year = `${usb_acct}__${year}.csv`;
+  const csv_path_file = path.join(WORKCSV, usb_acct_year);
+  console.log(`CSV PATH FILE: ${csv_path_file}`);
 
   let csv_stringifier;
   try {
@@ -2308,8 +2300,9 @@ yarn add --dev jest
 #+name:Makefile
 #+begin_src make :tangle Makefile
 clean-world:
-	rm *.{texi,info,js,json,lock}
-	rm -rf node_modules scripts
+	-rm *.{texi,info,js,json,lock}
+	-rm -rf LogReader
+	-rm -rf node_modules scripts
 #+end_src
 
 * Index
