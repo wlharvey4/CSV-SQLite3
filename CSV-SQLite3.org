@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-09-29 23:44
-#+macro: version Version 0.0.48
+#+date:2019-10-06 19:18
+#+macro: version Version 0.0.49
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -544,9 +544,13 @@ Create the CSV-SQLite3 project and install the Node.js package dependencies:
 #+name:create-CSV-SQLite3-project
 #+header: :exports both :results output
 #+begin_src sh
-yarn --yes --private init
-yarn add command-line-args command-line-usage csv sqlite3 accounting
+  yarn --yes --private init
+  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.49\",/' package.json
+  yarn add command-line-args command-line-usage csv sqlite3 accounting
+  yarn add https://github.com/wlharvey4/WLParser/archive/V0.1.tar.gz
 #+end_src
+
+#+RESULTS: create-CSV-SQLite3-project
 
 ** Import the Node.js Dependencies
 :PROPERTIES:
@@ -654,6 +658,10 @@ Export SQLite3 data into a CSV file of the same name:
 
 : csvsqlite --export <db> | -e <db-name>
 
+{{{subheading(Find and save all checks into the SQLite3 database)}}}
+
+: csvsqlite [--attach <db>] --find-checks <year> | -f <year>
+
 {{{subheading(Set a Log Level)}}}
 
 : csvsqlite --log-level <value:0..10> | -l <value:0..10>
@@ -668,6 +676,7 @@ Export SQLite3 data into a CSV file of the same name:
       { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file and related CSV files.' },
       { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
       { name: 'export', alias: 'e', type: String,  description: 'Export sqlite3 data into a csv file (default \'workfin.csv\'' },
+      { name: 'find-checks', alias: 'f', type: Number, description: 'Find checks in worklog <year> and save to sqlite3 database file.' },
       { name: 'log-level', alias: 'l', type: Number, description: 'Set a log level 0..10' },
   ];
   const options = cl_args(option_defs);
@@ -2116,208 +2125,20 @@ real data available to help.  An example would be checks.  The check
 information is located in the worklog, so one solution is to parse the worklog
 to obtain check information, then parse the Ledger file to update it.
 
-The program to parse the worklog will be a Node.js script.  It will open a
-stream on the worklog yearly files, then read each line into a data structure
-that will include such things as checks.
+I created a package called =WLParser= that can be used to find particular
+elements in the ~worklog~ files.  This package is set up to find and return all
+checks.  At this point, this program will present an option to gather all
+checks and place them into the SQLite3 database in a document called =checks=.
+When this program converts the CSV files into the =ledger= format, it can do a
+search for a particular check number in this SQLite3 document and incorporate
+that data into the ledger file.
 
-#+name:parse-worklog-script
-#+header: :mkdirp yes
-#+header: :shebang "#! /usr/bin/env node"
-#+begin_src js :tangle scripts/parse-worklog.js
-  const fs = require('fs');
-  const rl = require('readline');
-  const pa = require('path');
-
-  const USAGE      = 'USAGE: parse-worklog <account (e.g. 6815)> <year (e.g. 2016)>';
-  const re_help    = /h|help|usage/;
-  const re_account = /6815|6831|6151/;
-  const re_year    = /2016|2017|2018|2019/;
-  const re_datetime= /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):00$/;
-  const re_case    = /^\s+\d{2}..\d{2}$/;
-  const re_subjverb= /^\s+[\w\s]+ --- [\w\s]+$/;
-  const re_message = /^\s.{2,78}$/;
-  const re_action  = /^\s+(TIME|EXPENSE|TRUST|INVOICE|PAYMENT|\[.\] TODO|\[.\] HEARING)$/;
-  const re_line    = /^ -{78}$/;
-  const re_empty   = new RegExp('');
-
-  const WORKLOG    = process.env.WORKLOG;
-  if (!WORKLOG) {
-      console.error('Need to define the environment variable for WORKLOG');
-      process.exit(1);
-  }
-
-  // command line arguments:
-  // [2] := usb account, e.g., 6815
-  // [3] := year, e.g. 2016
-  const account    = process.argv[2], year = process.argv[3];
-
-  // asking for help/usage
-  if (re_help.test(account)) {
-      console.error(USAGE);
-      process.exit(0);
-  }
-
-  // make sure the proper arguments were sent
-  if (!re_account.test(account)) {
-      console.error('Need an account (e.g. 6815)');
-      console.error(USAGE);
-      process.exit(1);
-  } else {
-      console.log(`Account: ${account}`);
-  }
-
-  if (!re_year.test(year)) {
-      console.error('Need a year (e.g. 2016)');
-      console.error(USAGE);
-      process.exit(1);
-  } else {
-      console.log(`year: ${year}`);
-  }
-
-  // use the command line arguments to find the worklog file
-  const worklog = pa.join(WORKLOG, `worklog.${year}.otl`);
-
-  // create the readline interface
-  const interface = rl.createInterface({
-      input: fs.createReadStream(worklog, "utf-8"),
-  });
-
-  const logline = (re, line_no, line) => {
-      ok = re.test(line);
-      console.log(`${ok ? 'OK' : 'NOT OK'} [${line_no}] ${line}`);
-  }
-
-  let record_no = 0, line_no = 0;
-  let ok = true;
-  let wl = '';
-
-  interface.on('line', (line) => {
-      if (!ok) {process.exit(1)}
-      switch (line_no) {
-          case 0:
-          console.log(`RECORD NO ${record_no}`);
-          logline(re_datetime, line_no, line);
-          line_no++;
-          break;
-
-          case 1:
-          logline(re_case, line_no, line);
-          line_no++;
-          break;
-
-          case 2:
-          logline(re_subjverb, line_no, line);
-          line_no++;
-          break;
-
-          case 3:
-          logline(re_action, line_no, line);
-          line_no++;
-          break;
-
-          case 4:
-          logline(re_line, line_no, line);
-          line_no++;
-          break;
-
-          case 5:
-          if (!re_line.test(line)) {
-              logline(re_message, line_no, line);
-          } else {
-              line_no++;
-              logline(re_line, line_no, line);
-              line_no++;
-          }
-          break;
-
-          case 6:
-          break;
-
-          case 7:
-          logline(re_datetime, line_no, line);
-          line_no++;
-          break;
-
-          case 8:
-          logline(re_empty, line_no, line);
-          console.log();
-          line_no = 0, record_no++;
-      }
-  });
-#+end_src
-
-#+name:link-parse-worklog-script-into-workbin
-#+header: :results output :exports both
-#+begin_src sh
-  ln -f $PWD/scripts/parse-worklog.js $WORKBIN/parse-worklog
-#+end_src
-
-#+RESULTS: link-parse-worklog-script-into-workbin
-* Creating the LogReader
-The LogReader is an object that reads records in log files.  It receives the
-name of the log file to read, and an array of regular expressions, one for each
-line of the log file, with the final one being the record separator.  The
-LogReader will read each record of the file, checking each line for conformance
-with the regular expression for that line, and adding each conforming record to
-an array, and sending each non-conforming record to a special log file for
-review.
-
-Each record of the log file will be an object with key-value pairs, including
-one entry with the full log entry.
-
-** LogReader Project Setup
-
-#+caption:LogReader Project Setup
-#+name:logreader-project-setup
-#+header: :results output :exports both
-#+begin_src sh
-cd LogReader
-yarn init -yp
-yarn add --dev jest
-#+end_src
-
-#+caption: Add Scripts Tests to package.json
-#+name:add-scripts-tests-to-package.json
-#+header: :results output :exports both
-#+header: :dir LogReader
-#+BEGIN_SRC js
-const fs = require('fs');
-const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-p.scripts = {"tests": "jest"};
-fs.writeFileSync('package.json', JSON.stringify(p, null, 2));
-#+END_SRC
-
-#+caption:Package.json with Scripts Tests
-#+name:cat-package.json-with-scripts-tests
-#+header: :dir LogReader
-#+header: :results output :exports both
-#+BEGIN_SRC sh
-cat package.json
-#+END_SRC
-
-** LogReader Test File
-
-#+caption:LogReader Test File
-#+name:logreader-test-file
-#+header: :mkdirp yes
-#+begin_src js -n :tangle LogReader/tests/logreader.test.js
-// logreader.test.js
-#+end_src
-
-** LogReader Implementation File
-
-#+caption:LogReader Implementation
-#+name:logreader-implementation
-#+header: :mkdirp yes
-#+begin_src js -n :tangle LogReader/src/logreader.js
-// logreader.js
-#+end_src
-
+** Craete the Option to Find Checks
 * Makefile
 #+name:Makefile
 #+begin_src make :tangle Makefile
 clean-world:
-	-rm *.{texi,info,js,json,lock}
+	-rm *.{texi,info,js,json,lock,log}
 	-rm -rf LogReader
 	-rm -rf node_modules scripts
 #+end_src
