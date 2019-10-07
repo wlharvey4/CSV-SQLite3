@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-06 19:18
-#+macro: version Version 0.0.49
+#+date:2019-10-06 19:56
+#+macro: version Version 0.0.50
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -748,7 +748,7 @@ performance.
 
   const WORKDB     = process.env.WORKDB;     // base directory for .sqlite db files
   if (!fs.existsSync(WORKDB)) { fs.mkdirSync(WORKDB); }
-  const WORKCSV    = process.env.WORKCSV     // base directory for .csv files
+  const WORKCSV    = process.env.WORKCSV;    // base directory for .csv files
   if (!fs.existsSync(WORKCSV)) { fs.mkdirSync(WORKCSV); }
   const WORKLEDGER = process.env.WORKLEDGER; // base directory for .ledger files
   const WORKBAK    = process.env.WORKBAK;    // base directory for storing deleted files
@@ -897,6 +897,34 @@ performance.
       <<define-usb-table-schema>>`);
 #+end_src
 
+* Find and Store Checks
+
+After the Sqlite3 database is exported and converted by Ledger, there are
+numerous individual entries that need to be converted but for which there is no
+real data available to help.  An example would be checks.  The check
+information is located in the worklog, so one solution is to parse the worklog
+to obtain check information, then parse the Ledger file to update it.
+
+I created a package called =WLParser= that can be used to find particular
+elements in the ~worklog~ files.  This package is set up to find and return all
+checks.  At this point, this program will present an option to gather all
+checks and place them into the SQLite3 database in a document called =checks=.
+When this program converts the CSV files into the =ledger= format, it can do a
+search for a particular check number in this SQLite3 document and incorporate
+that data into the ledger file.
+
+Use the option ~--find-checks <year>~ to find and store checks from the worklog
+yearly file identified by =<year>= in the SQLite3 database in a document called
+=checks.=
+
+#+name:csv-sqlite3-find-checks-option
+#+BEGIN_SRC js +n :tangle index.js
+  if (options.hasOwnProperty('find-checks')) {
+    console.log("Let's find some checks");
+    process.exit(0);
+  }
+#+END_SRC
+
 * Export SQLite DB Data to CSV File
 Once data has been downloaded from the bank's web site and imported into the
 sqlite3 database, it must be converted into a Ledger file.  This is
@@ -1006,7 +1034,7 @@ file does not exist, then it will be created.
       );
 
       if (ret.error) {
-          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`)
+          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`);
           console.log(`error: ${ret.error}`);
       }
 
@@ -1747,8 +1775,6 @@ and the user has proper permissions to read it before proceeding.
   }
 #+end_src
 
-* Create Tables
-
 * Node-SQLite3 Module
 :PROPERTIES:
 :appendix: true
@@ -2118,22 +2144,6 @@ to be passed through {{{command(ledger print)}}} a second time if you want to
 match on the new =payee= field.  During the {{{command(ledger convert)}}} run,
 only the original =payee= name as specified in the csv data seems to be used.
 
-* Creating Patch File from Worklog
-After the Sqlite3 database is exported and converted by Ledger, there are
-numerous individual entries that need to be converted but for which there is no
-real data available to help.  An example would be checks.  The check
-information is located in the worklog, so one solution is to parse the worklog
-to obtain check information, then parse the Ledger file to update it.
-
-I created a package called =WLParser= that can be used to find particular
-elements in the ~worklog~ files.  This package is set up to find and return all
-checks.  At this point, this program will present an option to gather all
-checks and place them into the SQLite3 database in a document called =checks=.
-When this program converts the CSV files into the =ledger= format, it can do a
-search for a particular check number in this SQLite3 document and incorporate
-that data into the ledger file.
-
-** Craete the Option to Find Checks
 * Makefile
 #+name:Makefile
 #+begin_src make :tangle Makefile
