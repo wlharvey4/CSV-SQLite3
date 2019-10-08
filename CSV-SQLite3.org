@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-06 19:56
-#+macro: version Version 0.0.50
+#+date:2019-10-09 09:16
+#+macro: version Version 0.0.51
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -545,12 +545,22 @@ Create the CSV-SQLite3 project and install the Node.js package dependencies:
 #+header: :exports both :results output
 #+begin_src sh
   yarn --yes --private init
-  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.49\",/' package.json
+  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.51\",/' package.json
   yarn add command-line-args command-line-usage csv sqlite3 accounting
-  yarn add https://github.com/wlharvey4/WLParser/archive/V0.1.tar.gz
+  yarn add ssh://git@github.com:wlharvey4/wlparser.git#prod
 #+end_src
 
-#+RESULTS: create-CSV-SQLite3-project
+#+caption:Package json
+#+name:csv-sqlite3-package.json
+#+BEGIN_SRC sh :results output :exports both
+cat package.json
+#+END_SRC
+
+#+caption:Tree of CSV-SQLite3 directory structure
+#+name:tree-of-csv-sqlite3-directory-structure
+#+BEGIN_SRC sh :results output :exports both
+tree node_modules/WLParser
+#+END_SRC
 
 ** Import the Node.js Dependencies
 :PROPERTIES:
@@ -574,6 +584,7 @@ const cl_usage = require('command-line-usage');
 const csv      = require('csv');
 const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
 const accounting = require('accounting');
+const {wlchecks} = require('wlparser');
 #+end_src
 
 ** Establish Database Table Name and Columns
