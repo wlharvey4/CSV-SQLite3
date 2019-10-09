@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-09 09:16
-#+macro: version Version 0.0.51
+#+date:2019-10-09 09:31
+#+macro: version Version 0.0.52
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -466,7 +466,7 @@ The database column names are identical to the SQL column names except for
 #+end_src
 
 * CSV-SQLite3 Usage
-- ~csv-sqlite3 --csv <usb-acct> <year> [--attach <db>]
+- ~csv-sqlite3 --csv <usb-acct> <year> [--attach <db>] [--checks]
 
   - <usb-acct> is one of: =6815|6831|6151=
 
@@ -474,6 +474,9 @@ The database column names are identical to the SQL column names except for
 
   - ~--attach <db>~ is optional; the default is ~workfin.sqlite~, otherwise
     ~<db>.sqlite~
+
+  - ~--checks~ parses worklog.<year>.otl files for check data and places it
+    into <db> in a =checks= documents
 
   - Transform downloaded data and save in a new CSV file and a new sqlite3
     database.  The source CSV files are found at:
@@ -639,7 +642,9 @@ Options include giving the name of a database to attach to using =--attach
 <db>=.  In the absence of this option, a default database will be used.  A
 database can be deleted here as well using the option =--delete <db>=, with a
 backup being saved in the =WORKBAK= directory wtih the unix time suffixed to
-the end.
+the end.  If the option {{{option(--checks)}}} is included, parse the
+~worklog.<year>.otl~ worklog file for check information and save the same in a
+=checks= table in =<db>=.
 
 {{{subheading(Usage)}}}
 
@@ -687,7 +692,7 @@ Export SQLite3 data into a CSV file of the same name:
       { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file and related CSV files.' },
       { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
       { name: 'export', alias: 'e', type: String,  description: 'Export sqlite3 data into a csv file (default \'workfin.csv\'' },
-      { name: 'find-checks', alias: 'f', type: Number, description: 'Find checks in worklog <year> and save to sqlite3 database file.' },
+      { name: 'checks',             type: Boolean, description: 'Find checks in worklog.<year>.otl and save to sqlite3 database checks file.' },
       { name: 'log-level', alias: 'l', type: Number, description: 'Set a log level 0..10' },
   ];
   const options = cl_args(option_defs);
@@ -916,21 +921,22 @@ real data available to help.  An example would be checks.  The check
 information is located in the worklog, so one solution is to parse the worklog
 to obtain check information, then parse the Ledger file to update it.
 
-I created a package called =WLParser= that can be used to find particular
-elements in the ~worklog~ files.  This package is set up to find and return all
-checks.  At this point, this program will present an option to gather all
-checks and place them into the SQLite3 database in a document called =checks=.
-When this program converts the CSV files into the =ledger= format, it can do a
-search for a particular check number in this SQLite3 document and incorporate
-that data into the ledger file.
+I created a package called =wlparser= that can be used to find particular
+elements in the ~worklog.<year>.otl~ files.  This package is set up to find and
+return all checks for a particular year.  At this point, this program will
+present an option to gather all checks and place them into the SQLite3 database
+in a table called =checks=.  When this program converts the CSV files into the
+=ledger= format, it can do a search for a particular check number in this
+SQLite3 document and incorporate that data into the ledger file.
 
-Use the option ~--find-checks <year>~ to find and store checks from the worklog
-yearly file identified by =<year>= in the SQLite3 database in a document called
-=checks.=
+Use the option ~--checks~ to find and store checks from the worklog yearly file
+identified by =<year>= (from the {{{option(--csv)}}} option) in the
+~worklog.<year>.otl~ file and save into the SQLite3 database =<db>= in a table
+called =checks=.
 
 #+name:csv-sqlite3-find-checks-option
 #+BEGIN_SRC js +n :tangle index.js
-  if (options.hasOwnProperty('find-checks')) {
+  if (options.hasOwnProperty('checks')) {
     console.log("Let's find some checks");
     process.exit(0);
   }
