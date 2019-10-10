@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-09 09:31
-#+macro: version Version 0.0.52
+#+date:2019-10-09 22:39
+#+macro: version Version 0.0.53
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -360,13 +360,15 @@ The minimum SQLite tables that should be created are:
 - cases :: 190301, etc.
 - people :: John Doe, Mary Jane, etc.
 - businesses :: Law Office of ..., etc.
+- checks :: holds check information parsed from ~worklog.<year>.otl~ files
 
 
 More can be created as needed.
 
-** SQLite Table Columns
-#+cindex:columns
-The columns that should be created for the bank tables are:
+** SQLite USB Table Columns
+#+cindex:columns, usb table
+#+cindex:usb table columns
+The columns that should be created for the usb bank tables are:
 
 - =rowid= (implicit creation)
 - =acct= in the form of =usb_6815|usb_6831|usb_6151=
@@ -385,31 +387,34 @@ The columns that should be created for the bank tables are:
 - =amount= in the form =\pm##,###.##=
 
 
-| rowid       | acct       | date       | trans  | checkno | txfr       | payee    | category | memo | desc1 | desc2 | caseno  | amount     |
-|-------------+------------+------------+--------+---------+------------+----------+----------+------+-------+-------+---------+------------|
-| primary key | =usb_6815= | yyyy-mm-dd | credit | ####    | < usb 6151 | text     | text     | text | text  | text  | integer | \pm##,###.## |
-| implicit    | =usb_6831= | not null   | debit  | null    | > usb 6831 | not null | null     | null | null  | null  | null    | not null   |
-| creation    | =usb_6151= |            |        |         | null       |          |          |      |       |       |         |            |
-|-------------+------------+------------+--------+---------+------------+----------+----------+------+-------+-------+---------+------------|
+#+caption: USB Table Column Names
+#+name:usb-table-column-names
+| rowid       | acct       | date       | trans  | checkno | txfr       | payee    | category | memo | desc1 | desc2 | caseno  | amount    |
+|-------------+------------+------------+--------+---------+------------+----------+----------+------+-------+-------+---------+-----------|
+| primary key | =usb_6815= | yyyy-mm-dd | credit | ####    | < usb 6151 | text     | text     | text | text  | text  | integer | ##,###.## |
+| implicit    | =usb_6831= | not null   | debit  | null    | > usb 6831 | not null | null     | null | null  | null  | null    | not null  |
+| creation    | =usb_6151= |            |        |         | null       |          |          |      |       |       |         |           |
+|-------------+------------+------------+--------+---------+------------+----------+----------+------+-------+-------+---------+-----------|
 
+#+caption:Define the USB Table Schema
 #+name: define-usb-table-schema
 #+begin_src sql
   usb (
-         rowid    INTEGER PRIMARY KEY NOT NULL,
-         acct     VARCHAR NOT NULL,
-         date     VARCHAR NOT NULL,
-         trans    VARCHAR NOT NULL,
-         checkno  VARCHAR,
-         txfr     VARCHAR,
-         payee    VARCHAR NOT NULL,
-         category VARCHAR,
-         note     VARCHAR,
-         desc1    VARCHAR,
-         desc2    VARCHAR,
-         caseno   VARCHAR,
-         amount   REAL NOT NULL,
-         OrigPayee VARCHAR NOT NULL,
-         OrigMemo  VARCHAR NOT NULL )
+         rowid     INTEGER PRIMARY KEY NOT NULL,
+         acct      TEXT NOT NULL,
+         date      TEXT NOT NULL,
+         trans     TEXT NOT NULL,
+         checkno   TEXT,
+         txfr      TEXT,
+         payee     TEXT NOT NULL,
+         category  TEXT,
+         note      TEXT,
+         desc1     TEXT,
+         desc2     TEXT,
+         caseno    TEXT,
+         amount    REAL NOT NULL,
+         OrigPayee TEXT NOT NULL,
+         OrigMemo  TEXT NOT NULL )
 #+end_src
 
 The database column names are identical to the SQL column names except for
@@ -419,6 +424,7 @@ The database column names are identical to the SQL column names except for
 #+begin_src js
     const DB_TABLES = {
         usb: 'usb',
+        checks: 'checks',
     };
 
     const DB_ACCTS = {
@@ -463,6 +469,46 @@ The database column names are identical to the SQL column names except for
         'caseno',
         'amount',
   ];
+#+end_src
+
+** SQLite Checks Table Columns
+The column names for the =checks= table columns are:
+
+- =rowid=
+- =acct= e.g., 6815, 6831, 6151
+- =checkno=, e.g., 1001, 1002
+- =date=
+- =payee=
+- =subject=
+- =category=
+- =note=
+- =caseno=, e.g., 190301, 190205
+- =amount=
+
+
+#+caption:Checks Table Columns and Data Types
+#+name:checks-table-columns-and_data-types
+| rowid       | acct     | checkno  | date     | payee    | subject  | category | note | caseno | amount   |
+|-------------+----------+----------+----------+----------+----------+----------+------+--------+----------|
+| INTEGER     | INTEGER  | INTEGER  | TEXT     | TEXT     | TEXT     | TEXT     | TEXT | TEXT   | REAL     |
+| PRIMARY KEY | NOT NULL | NOT NULL | NOT NULL | NOT NULL | NOT NULL |          |      |        | NOT NULL |
+|-------------+----------+----------+----------+----------+----------+----------+------+--------+----------|
+
+#+caption:Define Checks Table Schema
+#+name:define-checks-table-schema
+#+begin_src sql
+  checks (
+           rowid   	  INTEGER PRIMARY KEY NOT NULL,
+           acct    	  INTEGER NOT NULL,
+           checkno 	  INTEGER NOT NULL,
+           date    	  TEXT    NOT NULL,
+           payee   	  TEXT    NOT NULL,
+           subject 	  TEXT    NOT NULL,
+           category   TEXT,
+           note       TEXT,
+           caseno     TEXT    NOT NULL,
+           amount     REAL    NOT NULL
+  )
 #+end_src
 
 * CSV-SQLite3 Usage
@@ -587,7 +633,7 @@ const cl_usage = require('command-line-usage');
 const csv      = require('csv');
 const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
 const accounting = require('accounting');
-const {wlchecks} = require('wlparser');
+const {WLChecks} = require('wlparser');
 #+end_src
 
 ** Establish Database Table Name and Columns
@@ -650,37 +696,37 @@ the end.  If the option {{{option(--checks)}}} is included, parse the
 
 Obtain usage information using the {{{option(--help)}}} option:
 
-: csvsqlite --help | -h
+: csv-sqlite3 --help | -h
 
 {{{subheading(Choose the CSV File)}}}
 
 For non-delete commands, identify the CSV file to transform via the =--csv=
 option:
 
-: csvsqlite --csv | -c 6815|6831 2004...2019
+: csv-sqlite3 --csv | -c 6815|6831 2004...2019
 
 {{{subheading(Attach and Delete a Database)}}}
 
 The database is attachable (it will be created automatically if it does not
 exist), and deleteable:
 
-: csvsqlite --attach <db> | -a <db-name>
+: csv-sqlite3 --attach <db> | -a <db-name>
 
-: csvsqlite --delete <db> | -d <db-name>
+: csv-sqlite3 --delete <db> | -d <db-name>
 
 {{{subheading(Export the SQLite3 data to CSV)}}}
 
 Export SQLite3 data into a CSV file of the same name:
 
-: csvsqlite --export <db> | -e <db-name>
+: csv-sqlite3 --export <db> | -e <db-name>
 
 {{{subheading(Find and save all checks into the SQLite3 database)}}}
 
-: csvsqlite [--attach <db>] --find-checks <year> | -f <year>
+: csv-sqlite3 [--attach <db>] --find-checks <year> | -f <year>
 
 {{{subheading(Set a Log Level)}}}
 
-: csvsqlite --log-level <value:0..10> | -l <value:0..10>
+: csv-sqlite3 --log-level <value:0..10> | -l <value:0..10>
 
 <<option-defs-variable>>
 #+name:csv-sqlite3-command-line-arg-processing
@@ -900,17 +946,22 @@ performance.
   // attach in all situations except --delete
   console.log('attaching...');
   const db = new sqlite3.Database(db_path, (err) => {
-      if (err)
-          console.error(`Error opening database file ${db_path}: ${err.message})`);
-      else
-          console.log(`Successfully attached to database file ${db_path}`);
+      if (err) {
+          return console.error(`Error opening database file ${db_path}: ${err.message})`);
+      }
+      console.log(`Successfully attached to database file ${db_path}`);
   });
-  console.log('done');
-
   db.serialize();
-
   db.run(`CREATE TABLE IF NOT EXISTS
       <<define-usb-table-schema>>`);
+
+  // year is needed for checks, so define it here
+  const [acct,year] = options.csv;
+  if (!year) {
+    console.error('ERROR: year is not defined.');
+    process.exit(1);
+  }
+  const wl_year = parseInt(year, 10);
 #+end_src
 
 * Find and Store Checks
@@ -935,9 +986,23 @@ identified by =<year>= (from the {{{option(--csv)}}} option) in the
 called =checks=.
 
 #+name:csv-sqlite3-find-checks-option
+#+header: :noweb yes
 #+BEGIN_SRC js +n :tangle index.js
   if (options.hasOwnProperty('checks')) {
     console.log("Let's find some checks");
+    db.run(`CREATE TABLE IF NOT EXISTS
+      <<define-checks-table-schema>>`);
+
+    const wlchecks = new WLChecks(wl_year);
+    let done = false;
+    wlchecks.on('check', check => {
+      console.log(`checkno: ${check.checkno}`);
+    }).on('checked', () => {
+      console.log('Checked');
+      done = true;
+    });
+    wlchecks.findChecks();
+    while (!done) {}
     process.exit(0);
   }
 #+END_SRC
@@ -1384,7 +1449,6 @@ they are the same.
       columns: DB_COLS,
   });
 
-  const [acct,year] = options.csv;
   const usb_acct = `usb_${acct}`;
   const usb_acct_year = `${usb_acct}__${year}.csv`;
 
