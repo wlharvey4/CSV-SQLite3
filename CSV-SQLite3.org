@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-09 22:39
-#+macro: version Version 0.0.53
+#+date:2019-10-10 19:53
+#+macro: version Version 0.0.54
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -2228,7 +2228,12 @@ only the original =payee= name as specified in the csv data seems to be used.
 * Makefile
 #+name:Makefile
 #+begin_src make :tangle Makefile
-clean-world:
+.PHONY: clean clean-world
+
+clean:
+	-rm *~
+
+clean-world: clean
 	-rm *.{texi,info,js,json,lock,log}
 	-rm -rf LogReader
 	-rm -rf node_modules scripts
