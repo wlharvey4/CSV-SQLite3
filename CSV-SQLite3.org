@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-10 19:53
-#+macro: version Version 0.0.54
+#+date:2019-10-11 00:23
+#+macro: version Version 0.0.55
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -498,16 +498,15 @@ The column names for the =checks= table columns are:
 #+name:define-checks-table-schema
 #+begin_src sql
   checks (
-           rowid   	  INTEGER PRIMARY KEY NOT NULL,
-           acct    	  INTEGER NOT NULL,
-           checkno 	  INTEGER NOT NULL,
-           date    	  TEXT    NOT NULL,
-           payee   	  TEXT    NOT NULL,
-           subject 	  TEXT    NOT NULL,
-           category   TEXT,
-           note       TEXT,
-           caseno     TEXT    NOT NULL,
-           amount     REAL    NOT NULL
+  	acct	INTEGER NOT NULL,
+  	checkno	INTEGER NOT NULL,
+  	date	TEXT    NOT NULL,
+  	payee	TEXT    NOT NULL,
+  	subject	TEXT    NOT NULL,
+  	category	TEXT,
+  	note	TEXT,
+ 	caseno	TEXT    NOT NULL,
+  	amount	REAL    NOT NULL
   )
 #+end_src
 
@@ -599,16 +598,12 @@ Create the CSV-SQLite3 project and install the Node.js package dependencies:
   yarn add ssh://git@github.com:wlharvey4/wlparser.git#prod
 #+end_src
 
+#+RESULTS: create-CSV-SQLite3-project
+
 #+caption:Package json
 #+name:csv-sqlite3-package.json
 #+BEGIN_SRC sh :results output :exports both
 cat package.json
-#+END_SRC
-
-#+caption:Tree of CSV-SQLite3 directory structure
-#+name:tree-of-csv-sqlite3-directory-structure
-#+BEGIN_SRC sh :results output :exports both
-tree node_modules/WLParser
 #+END_SRC
 
 ** Import the Node.js Dependencies
@@ -633,7 +628,6 @@ const cl_usage = require('command-line-usage');
 const csv      = require('csv');
 const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
 const accounting = require('accounting');
-const {WLChecks} = require('wlparser');
 #+end_src
 
 ** Establish Database Table Name and Columns
@@ -719,10 +713,6 @@ exist), and deleteable:
 Export SQLite3 data into a CSV file of the same name:
 
 : csv-sqlite3 --export <db> | -e <db-name>
-
-{{{subheading(Find and save all checks into the SQLite3 database)}}}
-
-: csv-sqlite3 [--attach <db>] --find-checks <year> | -f <year>
 
 {{{subheading(Set a Log Level)}}}
 
@@ -945,7 +935,7 @@ performance.
   /*--ATTACH--*/
   // attach in all situations except --delete
   console.log('attaching...');
-  const db = new sqlite3.Database(db_path, (err) => {
+  const db = new sqlite3.Database(db_path, err => {
       if (err) {
           return console.error(`Error opening database file ${db_path}: ${err.message})`);
       }
@@ -974,38 +964,112 @@ to obtain check information, then parse the Ledger file to update it.
 
 I created a package called =wlparser= that can be used to find particular
 elements in the ~worklog.<year>.otl~ files.  This package is set up to find and
-return all checks for a particular year.  At this point, this program will
-present an option to gather all checks and place them into the SQLite3 database
-in a table called =checks=.  When this program converts the CSV files into the
-=ledger= format, it can do a search for a particular check number in this
-SQLite3 document and incorporate that data into the ledger file.
+return all checks for a particular year.  At this point, the ~findChecks~
+program will take a required option for a =<year>=, and will then gather all
+checks and place them into the SQLite3 database in a table called =checks=.
 
-Use the option ~--checks~ to find and store checks from the worklog yearly file
-identified by =<year>= (from the {{{option(--csv)}}} option) in the
-~worklog.<year>.otl~ file and save into the SQLite3 database =<db>= in a table
+When this ~csv-sqlite3~ program converts the CSV files into the =ledger=
+format, it can do a search for a particular check number in this SQLite3
+=checks= table and incorporate that data into the ledger file.
+
+Use the commandline program ~findChecks <year>~ to find and store checks from
+the worklog yearly file identified by =<year>= option (i.e.,
+~worklog.<year>.otl~) and save it into the SQLite3 database =<db>= in a table
 called =checks=.
 
-#+name:csv-sqlite3-find-checks-option
-#+header: :noweb yes
-#+BEGIN_SRC js +n :tangle index.js
-  if (options.hasOwnProperty('checks')) {
-    console.log("Let's find some checks");
-    db.run(`CREATE TABLE IF NOT EXISTS
-      <<define-checks-table-schema>>`);
+#+caption:The =find-checks= script file
+#+name:find-checks-script-file
+#+header: :mkdirp yes :noweb yes
+#+header: :shebang "#!/usr/bin/env node"
+#+begin_src js -n :tangle scripts/find-checks.js
+  /* find-checks.js */
 
-    const wlchecks = new WLChecks(wl_year);
-    let done = false;
-    wlchecks.on('check', check => {
-      console.log(`checkno: ${check.checkno}`);
-    }).on('checked', () => {
-      console.log('Checked');
-      done = true;
-    });
-    wlchecks.findChecks();
-    while (!done) {}
-    process.exit(0);
+  /* USAGE:
+   ,* find-checks <year> [db]
+   ,*/
+
+  const DEFAULT_DB = 'workfin';
+  const TABLE = 'checks';
+  const EXT = '.sqlite';
+
+  // make sure WORKDB is defined
+  if (typeof process.env.WORKDB === 'undefined') {
+    console.error('Must defined environment variable for WORKDB');
+    process.exit(1);
   }
-#+END_SRC
+  const WORKDB = process.env.WORKDB;
+
+  // make sure a <year> argument is included
+  if (process.argv.length < 3) {
+    console.error('Must include a <year> argument: "find-checks <year>"');
+    process.exit(1);
+  }
+
+  // make sure the <year> argument is a number
+  const wlyear = parseInt(process.argv[2],10);
+  if (isNaN(wlyear)) {
+    console.error(`The <year> argument: "${process.argv[2]}" must be a year, e.g., "2016"`);
+    process.exit(1);
+  }
+
+  // second optional argument is the name of the database, without extension
+  // if no second argument, use default db of $WORKDB/workfin.sqlite
+  const path   = require('path');
+  const db_path = path.format({
+    dir: WORKDB,
+    name: `${process.argv[3] || DEFAULT_DB}`,
+    ext: EXT
+  });
+
+  // Everything is a go; load the wlparser, wlchecks, sqlite3 modules
+  const {WLChecks} = require('wlparser');
+  const wlchecks   = new WLChecks(wlyear);
+  const sqlite3    = require('sqlite3').verbose(); // remove verbose() for production code
+  let statement;
+
+  // load the sqlite3 database
+  const db = new sqlite3.Database(db_path, err => {
+    if (err) {
+      console.error(`Database Error: ${err}`);
+      process.exit(1);
+    }
+    console.log(`Successfully opened database at ${db_path}`);
+  });
+
+  db.serialize();
+
+  statement = `CREATE TABLE IF NOT EXISTS
+  <<define-checks-table-schema>>`;
+  db.run(statement);
+  
+  statement = `INSERT INTO ${TABLE} VALUES (?,?,?,?,?,?,?,?,?)`;
+
+  wlchecks.on('check', data => {
+    console.log(`Check data: ${data.acct} ${data.checkno}`);
+    db.run(statement, Object.values(data), err => console.error(err));
+  }).on('checked', () => {
+    console.log('Checked and exiting');
+    db.close();
+  }).on('error', err => {
+    console.error(`ERROR: ${err}`);
+    process.exit(1);
+  });
+
+  console.log('Finding checks starting now...');
+  wlchecks.findChecks();
+
+#+end_src
+
+{{{heading(Create Symbolic Link into WORKBIN)}}}
+
+This code creates a symbolic link into the =WORKBIN= directory for the command
+line program =find-checks= so that it can be run as a script.  Note that the
+link must be symbolic in order for the ~node_modules/wlparser/lib/*~ files to
+be found when ~find-checks~ is run from the =WORKBIN= directory.
+
+#+begin_src sh :results output :exports both :dir scripts
+ln -sf $PWD/find-checks.js $WORKBIN/find-checks
+#+end_src
 
 * Export SQLite DB Data to CSV File
 Once data has been downloaded from the bank's web site and imported into the
