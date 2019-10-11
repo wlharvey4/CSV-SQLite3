@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-11 00:23
-#+macro: version Version 0.0.55
+#+date:2019-10-11 09:04
+#+macro: version Version 0.0.56
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -468,7 +468,8 @@ The database column names are identical to the SQL column names except for
         'note',
         'caseno',
         'amount',
-  ];
+    ];
+
 #+end_src
 
 ** SQLite Checks Table Columns
@@ -509,6 +510,21 @@ The column names for the =checks= table columns are:
   	amount	REAL    NOT NULL
   )
 #+end_src
+
+#+name:define-database-tables-and-columns
+#+BEGIN_SRC js
+    const CHECKS_COLS = [
+        'acct',
+        'checkno',
+        'date',
+        'payee',
+        'subject',
+        'category',
+        'note',
+        'caseno',
+        'amount'
+    ];
+#+END_SRC
 
 * CSV-SQLite3 Usage
 - ~csv-sqlite3 --csv <usb-acct> <year> [--attach <db>] [--checks]
@@ -1230,7 +1246,7 @@ file does not exist, then it will be created.
       );
 
       if (ret.error) {
-          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`)
+          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`);
           console.log(`error: ${ret.error}`);
       }
 
@@ -1759,7 +1775,7 @@ records, for example.
 *** Set Up the Stream Transform
 #+name:stream-transformer
 #+begin_src js +n :tangle index.js
-  const transformer = csv.transform(transform_function)
+  const transformer = csv.transform(transform_function);
 
   /* TRANSFORMER reads records through its TRANSFORM_FUNCTION */
   /* -------------------------------------------------------- */
@@ -1782,7 +1798,7 @@ records, for example.
           const col_values= DB_COLS.map(c => record[c]);
 
           let sql = `INSERT INTO ${ tab_name }( ${ col_names } )
-                     VALUES ( ${ col_phs } )`
+                     VALUES ( ${ col_phs } )`;
 
           console.log(`sql: ${ sql }`);
           console.log(`col_values: ${ col_values }`);
