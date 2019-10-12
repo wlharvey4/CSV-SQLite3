@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-11 09:04
-#+macro: version Version 0.0.56
+#+date:2019-10-12 09:07
+#+macro: version Version 0.0.57
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -481,33 +481,31 @@ The column names for the =checks= table columns are:
 - =date=
 - =payee=
 - =subject=
-- =category=
-- =note=
+- =purpose=
 - =caseno=, e.g., 190301, 190205
 - =amount=
 
 
 #+caption:Checks Table Columns and Data Types
 #+name:checks-table-columns-and_data-types
-| rowid       | acct     | checkno  | date     | payee    | subject  | category | note | caseno | amount   |
-|-------------+----------+----------+----------+----------+----------+----------+------+--------+----------|
-| INTEGER     | INTEGER  | INTEGER  | TEXT     | TEXT     | TEXT     | TEXT     | TEXT | TEXT   | REAL     |
-| PRIMARY KEY | NOT NULL | NOT NULL | NOT NULL | NOT NULL | NOT NULL |          |      |        | NOT NULL |
-|-------------+----------+----------+----------+----------+----------+----------+------+--------+----------|
+| rowid       | acct     | checkno  | date     | payee    | subject  | purpose | caseno | amount   |
+|-------------+----------+----------+----------+----------+----------+---------+--------+----------|
+| INTEGER     | TEXT     | INTEGER  | TEXT     | TEXT     | TEXT     | TEXT    | TEXT   | REAL     |
+| PRIMARY KEY | NOT NULL | NOT NULL | NOT NULL | NOT NULL | NOT NULL |         |        | NOT NULL |
+|-------------+----------+----------+----------+----------+----------+---------+--------+----------|
 
 #+caption:Define Checks Table Schema
 #+name:define-checks-table-schema
 #+begin_src sql
   checks (
-  	acct	INTEGER NOT NULL,
-  	checkno	INTEGER NOT NULL,
-  	date	TEXT    NOT NULL,
-  	payee	TEXT    NOT NULL,
-  	subject	TEXT    NOT NULL,
-  	category	TEXT,
-  	note	TEXT,
- 	caseno	TEXT    NOT NULL,
-  	amount	REAL    NOT NULL
+  	acct		TEXT NOT NULL,
+  	checkno		TEXT NOT NULL,
+  	date		TEXT NOT NULL,
+  	payee		TEXT NOT NULL,
+  	subject		TEXT NOT NULL,
+  	purpose		TEXT,
+ 	caseno		TEXT NOT NULL,
+  	amount		REAL NOT NULL
   )
 #+end_src
 
@@ -519,8 +517,7 @@ The column names for the =checks= table columns are:
         'date',
         'payee',
         'subject',
-        'category',
-        'note',
+        'purpose',
         'caseno',
         'amount'
     ];
@@ -979,16 +976,18 @@ information is located in the worklog, so one solution is to parse the worklog
 to obtain check information, then parse the Ledger file to update it.
 
 I created a package called =wlparser= that can be used to find particular
-elements in the ~worklog.<year>.otl~ files.  This package is set up to find and
-return all checks for a particular year.  At this point, the ~findChecks~
-program will take a required option for a =<year>=, and will then gather all
-checks and place them into the SQLite3 database in a table called =checks=.
+elements in the ~worklog.<year>.otl~ files.  Among other things, this package
+is set up to find and return all checks for a particular year.  At this point,
+the ~findChecks~ program requires an argument for a =<year>=, and will then
+gather all checks and place them into the SQLite3 database in a table called
+=checks=.  It can be run any number of times for any yeaer and will not add
+duplicate entries.
 
 When this ~csv-sqlite3~ program converts the CSV files into the =ledger=
 format, it can do a search for a particular check number in this SQLite3
 =checks= table and incorporate that data into the ledger file.
 
-Use the commandline program ~findChecks <year>~ to find and store checks from
+Use the commandline program ~find-checks <year>~ to find and store checks from
 the worklog yearly file identified by =<year>= option (i.e.,
 ~worklog.<year>.otl~) and save it into the SQLite3 database =<db>= in a table
 called =checks=.
@@ -1005,8 +1004,8 @@ called =checks=.
    ,*/
 
   const DEFAULT_DB = 'workfin';
-  const TABLE = 'checks';
-  const EXT = '.sqlite';
+  const TABLE      = 'checks';
+  const EXT        = '.sqlite';
 
   // make sure WORKDB is defined
   if (typeof process.env.WORKDB === 'undefined') {
@@ -1041,9 +1040,19 @@ called =checks=.
   const {WLChecks} = require('wlparser');
   const wlchecks   = new WLChecks(wlyear);
   const sqlite3    = require('sqlite3').verbose(); // remove verbose() for production code
+  const CHECKS_COLS = [
+      'acct',
+      'checkno',
+      'date',
+      'payee',
+      'subject',
+      'purpose',
+      'caseno',
+      'amount'
+  ];
   let statement;
 
-  // load the sqlite3 database
+  // Load the sqlite3 database
   const db = new sqlite3.Database(db_path, err => {
     if (err) {
       console.error(`Database Error: ${err}`);
@@ -1057,18 +1066,27 @@ called =checks=.
   statement = `CREATE TABLE IF NOT EXISTS
   <<define-checks-table-schema>>`;
   db.run(statement);
-  
-  statement = `INSERT INTO ${TABLE} VALUES (?,?,?,?,?,?,?,?,?)`;
+
+  let cols = CHECKS_COLS.join(',');
+  let values = CHECKS_COLS.map(col => `$${col}`).join(', ');
+  statement = `INSERT INTO ${TABLE} (${cols}) VALUES (${values})`;
 
   wlchecks.on('check', data => {
-    console.log(`Check data: ${data.acct} ${data.checkno}`);
-    db.run(statement, Object.values(data), err => console.error(err));
+    delete data.type;
+    const new_data = {};
+    for (k in data) {
+        new_data[`$${k}`] = data[k];
+    }
+    db.run(statement, new_data, err => console.error(err));
+
   }).on('checked', () => {
     console.log('Checked and exiting');
     db.close();
+
   }).on('error', err => {
     console.error(`ERROR: ${err}`);
     process.exit(1);
+
   });
 
   console.log('Finding checks starting now...');
