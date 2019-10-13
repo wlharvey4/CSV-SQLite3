@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-12 09:07
-#+macro: version Version 0.0.57
+#+date:2019-10-13 16:57
+#+macro: version Version 0.0.58
 
 * Problem Statement
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
@@ -1067,32 +1067,44 @@ called =checks=.
   <<define-checks-table-schema>>`;
   db.run(statement);
 
-  let cols = CHECKS_COLS.join(',');
-  let values = CHECKS_COLS.map(col => `$${col}`).join(', ');
+  let cols = CHECKS_COLS.join(','); // create string of column names for INSERT statement
+  let values = CHECKS_COLS.map(col => `$${col}`).join(', '); // create string of placeholders for INSERT statement
   statement = `INSERT INTO ${TABLE} (${cols}) VALUES (${values})`;
 
+  let all_checks = []; // used to filter out already-entered checks
+
   wlchecks.on('check', data => {
-    delete data.type;
-    const new_data = {};
-    for (k in data) {
-        new_data[`$${k}`] = data[k];
-    }
-    db.run(statement, new_data, err => console.error(err));
+    delete data.type; // simply don't need this property
+    if (!all_checks.includes(data.checkno)) { // filter out already-entered checks
+        const new_data = {};
+        for (k in data) { // create the named parameters of form 'new_data = {$checkno: 1234}'
+            new_data[`$${k}`] = data[k];
+        }
+        db.run(statement, new_data, (err) => { // add the check data to the sqlite database
+            if (err) console.error(`ERROR: ${err}`);
+        });
+    };
 
   }).on('checked', () => {
-    console.log('Checked and exiting');
     db.close();
 
   }).on('error', err => {
-    console.error(`ERROR: ${err}`);
     process.exit(1);
 
   });
 
-  console.log('Finding checks starting now...');
-  wlchecks.findChecks();
+  // load all of the previously-entered checks into the array 'all_checks'
+  db.all(`SELECT checkno FROM ${TABLE} WHERE date LIKE '${wlyear}%'`, [], (err, check_data) => {
+      if (check_data) {
+          all_checks = check_data.map(row => row.checkno);
+      }
+
+      wlchecks.findChecks(); // start the stream running
+  });
 
 #+end_src
+
+#+RESULTS: find-checks-script-file
 
 {{{heading(Create Symbolic Link into WORKBIN)}}}
 
