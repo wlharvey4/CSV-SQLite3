@@ -2,10 +2,13 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-13 16:57
-#+macro: version Version 0.0.58
+#+date:2019-10-13 21:29
+#+macro: version Version 0.0.59
 
 * Problem Statement
+:PROPERTIES:
+:unnumbered: t
+:END:
 Instead of using Intuit Quicken or Microsoft Money, or even GnuCash, I would
 like to use Ledger3 to manage my finances.  Two big problems immediately arise:
 
@@ -1153,7 +1156,7 @@ file upon opening it for writing.  The program will halt after the export.
 #+cindex:@command{convert} command
 Upon an export of the SQLite3 data to a CSV file, the program will also send
 the exported data through the Ledger {{{command(convert)}}} command and into
-the ~workfin.ledger~ data file.[fn::Refer to the Ledge manual at Sec. 7.2.1.2
+the ~workfin.ledger~ data file.[fn::Refer to the Ledger manual at Sec. 7.2.1.2
 for the {{{command(convert}}}} command.]  This file is located in the ~ledger/~
 directory below the ~workfin~ directory.
 
@@ -2338,13 +2341,21 @@ only the original =payee= name as specified in the csv data seems to be used.
 * Makefile
 #+name:Makefile
 #+begin_src make :tangle Makefile
-.PHONY: clean clean-world
+.PHONY: clean clean-world pdf open-pdf
+
+csv-sqlite3.pdf: CSV-SQLite3.texi
+	pdftexi2dvi -q -c CSV-SQLite3.texi
+
+pdf: csv-sqlite3.pdf
+
+open-pdf: pdf
+	open csv-sqlite3.pdf
 
 clean:
 	-rm *~
 
 clean-world: clean
-	-rm *.{texi,info,js,json,lock,log}
+	-rm *.{texi,info,pdf,js,json,lock,log}
 	-rm -rf LogReader
 	-rm -rf node_modules scripts
 #+end_src
