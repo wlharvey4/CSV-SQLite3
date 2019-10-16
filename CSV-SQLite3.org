@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-16 11:18
-#+macro: version Version 0.0.60
+#+date:2019-10-16 11:30
+#+macro: version Version 0.0.61
 
 * Problem Statement
 :PROPERTIES:
@@ -2341,37 +2341,45 @@ only the original =payee= name as specified in the csv data seems to be used.
 * Makefile
 #+name:Makefile
 #+begin_src make :tangle Makefile
+SOURCE = CSV-SQLite3
+ORG    = $(SOURCE).org
+TEXI   = $(SOURCE).texi
+INFO   = $(SOURCE).info
+PDF    = $(SOURCE).pdf
+DOCS   = docs
+SCRIPTS=scripts/
+
 .PHONY: clean clean-world
 .PHONY: tangle weave texi info pdf open-pdf
 .PHONY: install-docs install-info install-pdf docs-dir
 
-tangle: CSV-SQLite3.org
-	emacs --batch CSV-SQLite3.org \
-	--eval '(org-babel-tangle-file "CSV-SQLite3.org")'
+tangle: $(ORG)
+	emacs --batch $(ORG) \
+	--eval '(org-babel-tangle-file "$(ORG)")'
 
 weave: texi info
 
-texi: CSV-SQLite3.texi
-CSV-SQLite3.texi: CSV-SQLite3.org
-	emacs --batch CSV-SQLite3.org \
+texi: $(TEXI)
+$(TEXI): $(ORG)
+	emacs --batch $(ORG) \
 	--eval '(require '\''ob-shell)' \
 	--eval '(require '\''ob-js)' \
 	--eval '(setq org-confirm-babel-evaluate nil)' \
 	--eval '(org-texinfo-export-to-texinfo)'
 
-info install-info: docs/csv-sqlite3.info | docs-dir
-docs/csv-sqlite3.info: CSV-SQLite3.texi
-	makeinfo --output=docs/ CSV-SQLite3.texi
+info install-info: $(DOCS)/$(INFO) | docs-dir
+$(DOCS)/$(INFO): $(TEXI)
+	makeinfo --output=$(DOCS)/ $(TEXI)
 
 install-docs: install-info install-pdf
 
-pdf install-pdf: docs/CSV-SQLite3.pdf | docs-dir
-docs/CSV-SQLite3.pdf: CSV-SQLite3.texi
-	pdftexi2dvi -q -c CSV-SQLite3.texi
-	mv CSV-SQLite3.pdf docs/
+pdf install-pdf: $(DOCS)/$(PDF) | docs-dir
+$(DOCS)/$(PDF): $(TEXI)
+	pdftexi2dvi -q -c $(TEXI)
+	mv $(PDF) $(DOCS)/
 
-open-pdf: docs/CSV-SQLite3.pdf
-	open csv-sqlite3.pdf
+open-pdf: $(DOCS)/$(PDF)
+	open $(DOCS)/$(PDF)
 
 docs-dir: docs
 docs:
@@ -2383,7 +2391,7 @@ clean:
 clean-world: clean
 	-rm *.{texi,info,pdf,js,json,lock,log}
 	-rm -rf LogReader
-	-rm -rf node_modules scripts docs
+	-rm -rf node_modules $(SCRIPTS) $(DOCS)
 #+end_src
 
 * Index
