@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-13 21:29
-#+macro: version Version 0.0.59
+#+date:2019-10-16 11:18
+#+macro: version Version 0.0.60
 
 * Problem Statement
 :PROPERTIES:
@@ -2341,15 +2341,41 @@ only the original =payee= name as specified in the csv data seems to be used.
 * Makefile
 #+name:Makefile
 #+begin_src make :tangle Makefile
-.PHONY: clean clean-world pdf open-pdf
+.PHONY: clean clean-world
+.PHONY: tangle weave texi info pdf open-pdf
+.PHONY: install-docs install-info install-pdf docs-dir
 
-csv-sqlite3.pdf: CSV-SQLite3.texi
+tangle: CSV-SQLite3.org
+	emacs --batch CSV-SQLite3.org \
+	--eval '(org-babel-tangle-file "CSV-SQLite3.org")'
+
+weave: texi info
+
+texi: CSV-SQLite3.texi
+CSV-SQLite3.texi: CSV-SQLite3.org
+	emacs --batch CSV-SQLite3.org \
+	--eval '(require '\''ob-shell)' \
+	--eval '(require '\''ob-js)' \
+	--eval '(setq org-confirm-babel-evaluate nil)' \
+	--eval '(org-texinfo-export-to-texinfo)'
+
+info install-info: docs/csv-sqlite3.info | docs-dir
+docs/csv-sqlite3.info: CSV-SQLite3.texi
+	makeinfo --output=docs/ CSV-SQLite3.texi
+
+install-docs: install-info install-pdf
+
+pdf install-pdf: docs/CSV-SQLite3.pdf | docs-dir
+docs/CSV-SQLite3.pdf: CSV-SQLite3.texi
 	pdftexi2dvi -q -c CSV-SQLite3.texi
+	mv CSV-SQLite3.pdf docs/
 
-pdf: csv-sqlite3.pdf
-
-open-pdf: pdf
+open-pdf: docs/CSV-SQLite3.pdf
 	open csv-sqlite3.pdf
+
+docs-dir: docs
+docs:
+	mkdir -vp docs
 
 clean:
 	-rm *~
@@ -2357,7 +2383,7 @@ clean:
 clean-world: clean
 	-rm *.{texi,info,pdf,js,json,lock,log}
 	-rm -rf LogReader
-	-rm -rf node_modules scripts
+	-rm -rf node_modules scripts docs
 #+end_src
 
 * Index
