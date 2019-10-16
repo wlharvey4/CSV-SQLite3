@@ -2,8 +2,8 @@
 #+title: CSV-SQLite3 Using Node
 #+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
 #+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-16 11:30
-#+macro: version Version 0.0.61
+#+date:2019-10-16 11:41
+#+macro: version Version 0.0.62
 
 * Problem Statement
 :PROPERTIES:
@@ -2392,6 +2392,17 @@ clean-world: clean
 	-rm *.{texi,info,pdf,js,json,lock,log}
 	-rm -rf LogReader
 	-rm -rf node_modules $(SCRIPTS) $(DOCS)
+
+clean-prod: clean
+	-rm *.{texi.org} Makefile LogReader
+	-rm -rf node_modules
+
+prod: clean install-docs clean-prod
+	git checkout -B prod
+	git add -A .
+	git commit -m "branch:prod"
+	git push -f origin prod
+
 #+end_src
 
 * Index
