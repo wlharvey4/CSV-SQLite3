@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-17 Thu 00:53>
-#+macro: version Version 0.0.65
+#+date:<2019-10-17 Thu 01:01>
+#+macro: version Version 0.0.66
 
 #+texinfo: @insertcopying
 
@@ -2399,7 +2399,8 @@ $(DOCS)/$(INFO): $(TEXI) | docs-dir
 	makeinfo --output=$(DOCS)/ $(TEXI)
 
 install: package.json
-package.json:	$(ORG) | docs-dir
+package.json:	$(ORG) tangle | docs-dir
+	./$(SCRIPTS)/version-update.sh
 	emacs -Q --batch $(ORG) \
 	--eval '(require '\''ob-shell)' \
 	--eval '(require '\''ob-js)' \

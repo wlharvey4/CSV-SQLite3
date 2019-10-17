@@ -25,7 +25,8 @@ $(DOCS)/$(INFO): $(TEXI) | docs-dir
 	makeinfo --output=$(DOCS)/ $(TEXI)
 
 install: package.json
-package.json:	$(ORG) | docs-dir
+package.json:	$(ORG) tangle | docs-dir
+	./$(SCRIPTS)/version-update.sh
 	emacs -Q --batch $(ORG) \
 	--eval '(require '\''ob-shell)' \
 	--eval '(require '\''ob-js)' \
