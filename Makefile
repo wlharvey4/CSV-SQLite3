@@ -48,20 +48,16 @@ docs-dir: docs
 docs:
 	mkdir -vp docs
 
-update-version: $(ORG)
-	git checkout dev
-	make tangle
+update-version: $(ORG) tangle
 	./$(SCRIPTS)/update-version.sh
+	mv -v $(ORG).bak $(WORKBAK)/$(ORG).$(shell date "+%s")
 	make clean-world
-	git add -u
-	git commit -m "Updated package.json version"
-	git push origin dev
 
 clean:
 	-rm *~
 
 clean-world: clean
-	-rm *.{texi,info,pdf,js,json,lock,log}
+	-rm *.{texi,info,pdf,js,json,lock,log,bak}
 	-rm -rf LogReader
 	-rm -rf node_modules $(SCRIPTS) $(DOCS)
 
@@ -69,7 +65,7 @@ clean-prod: clean
 	-rm *.{texi,org} Makefile LogReader
 	-rm -rf node_modules
 
-prod: install clean-prod
+prod: update-version install clean-prod
 	git checkout -B prod
 	git add -A .
 	git commit -m "branch:prod"
