@@ -612,7 +612,7 @@ Create the CSV-SQLite3 project and install the Node.js package dependencies:
 #+header: :exports both :results output
 #+begin_src sh
   yarn --yes --private init
-  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.51\",/' package.json
+  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.67\",/' package.json
   yarn add command-line-args command-line-usage csv sqlite3 accounting
   yarn add ssh://git@github.com:wlharvey4/wlparser.git#prod
 #+end_src
