@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-16 Wed 23:01>
-#+macro: version Version 0.0.64
+#+date:<2019-10-17 Thu 00:53>
+#+macro: version Version 0.0.65
 
 #+texinfo: @insertcopying
 
@@ -2340,6 +2340,34 @@ Note that it may be necessary for the output of {{{command(ledger convert)}}}
 to be passed through {{{command(ledger print)}}} a second time if you want to
 match on the new =payee= field.  During the {{{command(ledger convert)}}} run,
 only the original =payee= name as specified in the csv data seems to be used.
+
+* Update package.json Version
+In order to keep the ~package.json~ =version= number in sync with this
+document's version number, create a little script to update its version based
+upon the macro version's current value.  This little script will then be run
+whenever an installation occurs.
+
+#+caption:Update ~package.json~ Version Number
+#+name:update-package.json-version-number
+#+header: :mkdirp yes
+#+header: :shebang "#!/usr/bin/env bash"
+#+begin_src sh :tangle scripts/version-update.sh
+sed -i '.bak' -E -e '
+/\#\+macro: version Version/bx
+/,\/\\"version\\":/by
+b
+:x
+h
+s/^(.*macro: version Version )(.*)$/\2/
+x
+b
+:y
+H
+x
+s/\n//
+s/^([[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+)(.*)([[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+)/\2\1/
+' CSV-SQLite3.org
+#+end_src
 
 * Makefile
 #+name:Makefile
