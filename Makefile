@@ -8,25 +8,31 @@ SCRIPTS=scripts/
 
 .PHONY: clean clean-world
 .PHONY: tangle weave texi info pdf open-pdf
-.PHONY: install-docs install-info install-pdf docs-dir
-
-tangle: $(ORG)
-	emacs --batch $(ORG) \
-	--eval '(org-babel-tangle-file "$(ORG)")'
-
-weave: texi info
+.PHONY: install install-docs install-info install-pdf docs-dir
 
 texi: $(TEXI)
 $(TEXI): $(ORG)
-	emacs --batch $(ORG) \
+	emacs -Q --batch $(ORG) \
+	--eval '(setq org-export-use-babel nil)' \
+	--eval '(org-texinfo-export-to-texinfo)'
+
+tangle: $(ORG)
+	emacs -Q --batch $(ORG) \
+	--eval '(org-babel-tangle-file "$(ORG)")'
+
+weave info install-info: $(DOCS)/$(INFO)
+$(DOCS)/$(INFO): $(TEXI) | docs-dir
+	makeinfo --output=$(DOCS)/ $(TEXI)
+
+install: package.json
+package.json:	$(ORG) | docs-dir
+	emacs -Q --batch $(ORG) \
 	--eval '(require '\''ob-shell)' \
 	--eval '(require '\''ob-js)' \
 	--eval '(setq org-confirm-babel-evaluate nil)' \
-	--eval '(org-texinfo-export-to-texinfo)'
-
-info install-info: $(DOCS)/$(INFO)
-$(DOCS)/$(INFO): $(TEXI) | docs-dir
-	makeinfo --output=$(DOCS)/ $(TEXI)
+	--eval '(org-texinfo-export-to-info)'
+	mv $(INFO) $(DOCS)/
+	make install-pdf
 
 install-docs: install-info install-pdf
 
@@ -51,10 +57,10 @@ clean-world: clean
 	-rm -rf node_modules $(SCRIPTS) $(DOCS)
 
 clean-prod: clean
-	-rm *.{texi.org} Makefile LogReader
+	-rm *.{texi,org} Makefile LogReader
 	-rm -rf node_modules
 
-prod: clean install-docs clean-prod
+prod: install clean-prod
 	git checkout -B prod
 	git add -A .
 	git commit -m "branch:prod"
