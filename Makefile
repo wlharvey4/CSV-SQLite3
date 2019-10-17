@@ -4,7 +4,7 @@ TEXI   = $(SOURCE).texi
 INFO   = $(SOURCE).info
 PDF    = $(SOURCE).pdf
 DOCS   = docs
-SCRIPTS=scripts/
+SCRIPTS=scripts
 
 .PHONY: clean clean-world
 .PHONY: tangle weave texi info pdf open-pdf
@@ -25,8 +25,7 @@ $(DOCS)/$(INFO): $(TEXI) | docs-dir
 	makeinfo --output=$(DOCS)/ $(TEXI)
 
 install: package.json
-package.json:	$(ORG) tangle | docs-dir
-	./$(SCRIPTS)/version-update.sh
+package.json:	$(ORG) | docs-dir
 	emacs -Q --batch $(ORG) \
 	--eval '(require '\''ob-shell)' \
 	--eval '(require '\''ob-js)' \
@@ -48,6 +47,15 @@ open-pdf: $(DOCS)/$(PDF)
 docs-dir: docs
 docs:
 	mkdir -vp docs
+
+update-version: $(ORG)
+	git checkout dev
+	make tangle
+	./$(SCRIPTS)/update-version.sh
+	make clean-world
+	git add -u
+	git commit -m "Updated package.json version"
+	git push origin dev
 
 clean:
 	-rm *~
