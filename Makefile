@@ -24,14 +24,14 @@ $(TEXI): $(ORG)
 	--eval '(setq org-confirm-babel-evaluate nil)' \
 	--eval '(org-texinfo-export-to-texinfo)'
 
-info install-info: $(DOCS)/$(INFO) | docs-dir
-$(DOCS)/$(INFO): $(TEXI)
+info install-info: $(DOCS)/$(INFO)
+$(DOCS)/$(INFO): $(TEXI) | docs-dir
 	makeinfo --output=$(DOCS)/ $(TEXI)
 
 install-docs: install-info install-pdf
 
-pdf install-pdf: $(DOCS)/$(PDF) | docs-dir
-$(DOCS)/$(PDF): $(TEXI)
+pdf install-pdf: $(DOCS)/$(PDF)
+$(DOCS)/$(PDF): $(TEXI) | docs-dir
 	pdftexi2dvi -q -c $(TEXI)
 	mv $(PDF) $(DOCS)/
 

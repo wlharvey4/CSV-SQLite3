@@ -1,9 +1,12 @@
 # -*- mode:org; fill-column:79; -*-
 #+title: CSV-SQLite3 Using Node
-#+subtitle:Convert CSV files into data usable by SQLite3@@texinfo:@*@@
-#+subtitle:{{{date}}} {{{version}}}
-#+date:2019-10-16 11:41
-#+macro: version Version 0.0.62
+#+subtitle:Convert CSV files into data used by SQLite3
+#+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
+#+author:LOLH
+#+date:<2019-10-16 Wed 22:11>
+#+macro: version Version 0.0.63
+
+#+texinfo: @insertcopying
 
 * Problem Statement
 :PROPERTIES:
@@ -2367,14 +2370,14 @@ $(TEXI): $(ORG)
 	--eval '(setq org-confirm-babel-evaluate nil)' \
 	--eval '(org-texinfo-export-to-texinfo)'
 
-info install-info: $(DOCS)/$(INFO) | docs-dir
-$(DOCS)/$(INFO): $(TEXI)
+info install-info: $(DOCS)/$(INFO)
+$(DOCS)/$(INFO): $(TEXI) | docs-dir
 	makeinfo --output=$(DOCS)/ $(TEXI)
 
 install-docs: install-info install-pdf
 
-pdf install-pdf: $(DOCS)/$(PDF) | docs-dir
-$(DOCS)/$(PDF): $(TEXI)
+pdf install-pdf: $(DOCS)/$(PDF)
+$(DOCS)/$(PDF): $(TEXI) | docs-dir
 	pdftexi2dvi -q -c $(TEXI)
 	mv $(PDF) $(DOCS)/
 
@@ -2394,7 +2397,7 @@ clean-world: clean
 	-rm -rf node_modules $(SCRIPTS) $(DOCS)
 
 clean-prod: clean
-	-rm *.{texi.org} Makefile LogReader
+	-rm *.{texi,org} Makefile LogReader
 	-rm -rf node_modules
 
 prod: clean install-docs clean-prod
@@ -2422,6 +2425,14 @@ prod: clean install-docs clean-prod
 :unnumbered: t
 :END:
 #+texinfo:@listoffloats Listing
+* Copying
+:PROPERTIES:
+:copying:  t
+:END:
+{{{title}}} {{{version}}} ({{{date(%a %02m-%02d-%Y)}}})
+
+\copy {{{date(%Y)}}} {{{author}}}
+
 * Macro Definitions                                                :noexport:
 #+macro: heading @@texinfo:@heading @@$1
 #+macro: subheading @@texinfo:@subheading @@$1
@@ -2429,11 +2440,11 @@ prod: clean install-docs clean-prod
 #+macro: option @@texinfo:@option{@@$1@@texinfo:}@@
 #+macro: command @@texinfo:@command{@@$1@@texinfo:}@@
 
-* Options                                                          :noindent:
+* Options                                                          :noexport:
 #+startup: indent
 #+options: H:4 ':t
 * Export Settings                                                  :noexport:
-#+texinfo_filename:csv-sqlite3.info
+#+texinfo_filename:CSV-SQLite3.info
 #+texinfo_class: info
 #+texinfo_header:
 #+texinfo_post_header:
@@ -2444,7 +2455,7 @@ prod: clean install-docs clean-prod
 
 * Local Variables                                                  :noexport:
 # Local Variables:
-# time-stamp-pattern:"8/^\\#\\+date:%:y-%02m-%02d %02H:%02M$"
+# time-stamp-pattern:"8/^\\#\\+date:<%:y-%02m-%02d %3a %02H:%02M>$"
 # eval: (auto-fill-mode)
 # eval: (column-number-mode)
 # End:
