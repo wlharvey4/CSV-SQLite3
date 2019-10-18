@@ -1,0 +1,17 @@
+{
+  "name": "csv-sqlite3",
+  "version": "0.0.73",
+  "main": "index.js",
+  "repository": "ssh://git@github.com/wlharvey4/csv-sqlite3.git",
+  "author": "Wesley Harvey <pinecone062@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+    "accounting": "^0.4.1",
+    "command-line-args": "^5.1.1",
+    "command-line-usage": "^6.0.2",
+    "csv": "^5.1.3",
+    "sqlite3": "^4.1.0",
+    "wlparser": "ssh://git@github.com:wlharvey4/wlparser.git#prod"
+  }
+}
