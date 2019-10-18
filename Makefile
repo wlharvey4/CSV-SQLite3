@@ -48,22 +48,33 @@ docs-dir: docs
 docs:
 	mkdir -vp docs
 
-checkout-dev:
-	git checkout dev
 
-update-version: checkout-dev tangle-update-version
-	./$(SCRIPTS)/update-version.sh
-	mv -v $(ORG).bak $(WORKBAK)/$(ORG).$(shell date "+%s")
-	make clean-world
+update-version: update-dev create-prod
+
+update-dev: checkout-dev run-update-version
 	git add -u
 	git commit --amend -C HEAD
 	git push -f origin dev
+
+checkout-dev:
+	git checkout dev
+
+create-prod: checkout-dev install clean-prod
+	git checkout -B prod
+	git add -A .
+	git commit -m "Branch:prod"
+	git push -f origin prod
+
+run-update-version: tangle-update-version
+	./$(SCRIPTS)/update-version.sh
+	mv -v $(ORG).bak $(WORKBAK)/$(ORG).$(shell date "+%s")
 
 tangle-update-version: $(SCRIPTS)/update-version.sh
 $(SCRIPTS)/update-version.sh: $(ORG)
 	emacs -Q --batch $(ORG) \
 	--eval '(search-forward "update-version.sh")' \
 	--eval '(org-babel-tangle '\''(4))'
+
 
 clean:
 	-rm *~
@@ -76,9 +87,3 @@ clean-world: clean
 clean-prod: clean
 	-rm *.{texi,org} Makefile LogReader
 	-rm -rf node_modules
-
-prod: update-version install clean-prod
-	git checkout -B prod
-	git add -A .
-	git commit -m "branch:prod"
-	git push -f origin prod
