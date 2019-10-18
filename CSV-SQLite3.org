@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-18 Fri 00:17>
-#+macro: version Version 0.0.71
+#+date:<2019-10-18 Fri 08:19>
+#+macro: version Version 0.0.72
 
 #+texinfo: @insertcopying
 
@@ -2398,9 +2398,11 @@ PDF    = $(SOURCE).pdf
 DOCS   = docs
 SCRIPTS=scripts
 
-.PHONY: clean clean-world
-.PHONY: tangle weave texi info pdf open-pdf
-.PHONY: install install-docs install-info install-pdf docs-dir
+.PHONY: clean clean-world clean-prod
+.PHONY: tangle weave texi info pdf
+.PHONY: install install-docs install-info install-pdf open-pdf docs-dir
+.PHONY: update-dev checkout-dev create-prod
+.PHONY: update-version tangle-update-version run-update-version
 
 texi: $(TEXI)
 $(TEXI): $(ORG)
@@ -2412,7 +2414,7 @@ tangle: $(ORG)
 	emacs -Q --batch $(ORG) \
 	--eval '(org-babel-tangle-file "$(ORG)")'
 
-weave info install-info: $(DOCS)/$(INFO)
+info weave install-info: $(DOCS)/$(INFO)
 $(DOCS)/$(INFO): $(TEXI) | docs-dir
 	makeinfo --output=$(DOCS)/ $(TEXI)
 
@@ -2436,8 +2438,8 @@ $(DOCS)/$(PDF): $(TEXI) | docs-dir
 open-pdf: $(DOCS)/$(PDF)
 	open $(DOCS)/$(PDF)
 
-docs-dir: docs
-docs:
+docs-dir: $(DOCS)
+$(DOCS):
 	mkdir -vp docs
 
 
