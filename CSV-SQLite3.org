@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-18 Fri 08:35>
-#+macro: version Version 0.0.73
+#+date:<2019-10-19 Sat 08:07>
+#+macro: version Version 0.0.74
 
 #+texinfo: @insertcopying
 
@@ -568,10 +568,15 @@ The column names for the =checks= table columns are:
 
   Set a log level (default is =warn=)
 
-* Create the Project
+* Creating the Project
+This section deals with creating the CSV-SQLite3 project and identifying its
+dependencies.  It also deals with the project's main ~index.js~ file.
 
+** The Project's Dependencies
 {{{heading(External Dependencies)}}}
 
+#+cindex:external dependencies
+#+cindex:dependencies, external
 This project's external dependencies are the following Node.js modules:
 
 - ~command-line-args~ :: https://github.com/75lb/command-line-args#readme
@@ -580,9 +585,18 @@ This project's external dependencies are the following Node.js modules:
 - ~sqlite3~ :: https://github.com/mapbox/node-sqlite3/wiki
 - ~accounting~ :: http://openexchangerates.github.io/accounting.js/
 
+                  provides simple and advanced number, money and currency
+                  formatting.
+- wlparser :: https://git@github.com/wlharvey4/wlparser.git
 
-{{{heading(Node.js Dependencies)}}}
+              provides ~worklog~ reading and parsing capabilities, particular
+              for obtaining check information, for example
 
+
+{{{heading(Node.js Internal Dependencies)}}}
+
+#+cindex:internal dependencies
+#+cindex:dependencies, external
 This project's Node.js internal dependencies are the following:
 
 - ~File System (fs)~ :: File System for working with files
@@ -598,14 +612,20 @@ This project's Node.js internal dependencies are the following:
 (org-babel-tangle-file "CSV-SQLite3.org")
 #+end_src
 
-** Install the CSV-SQLite3 Package and Dependencies
-Create the CSV-SQLite3 project and install the Node.js package dependencies:
+** Create the CSV-SQLite3 Package and Dependencies
+
+#+cindex:@file{CSV-SQLite3} project
+#+cindex:@file{csv-sqlite3} package, dependencies
+#+cindex:@file{package.json}, @file{csv-sqlite3}
+Create the CSV-SQLite3 project by initializing a ~package.json~ and installing
+its dependencies:
 
 - ~command-line-ars~
 - ~command-line-usage~
 - ~csv~
 - ~sqlite3~
 - ~accounting~
+- ~wlparser~
 
 
 #+caption:Create the CSV-SQLite3 Project
@@ -618,20 +638,20 @@ Create the CSV-SQLite3 project and install the Node.js package dependencies:
   yarn add ssh://git@github.com:wlharvey4/wlparser.git#prod
 #+end_src
 
-#+RESULTS: create-CSV-SQLite3-project
-
 #+caption:Package json
 #+name:csv-sqlite3-package.json
 #+BEGIN_SRC sh :results output :exports both
 cat package.json
 #+END_SRC
 
-** Import the Node.js Dependencies
+** Create the Package ~index.js~ File and Import its Dependencies
 :PROPERTIES:
 :header-args: :comments both
 :END:
 
-Create the base file ~index.js~ and import the project's dependencies.
+#+cindex:@file{index.js}
+After the ~csv-sqlite3~ package has been created and installed, create the
+package's ~index.js~ file and import the project's dependencies.
 
 #+name:csv-sqlite3-dependencies
 #+header: :mkdirp yes
@@ -1492,32 +1512,47 @@ outstanding invoices:
           Income:150707			-$  75.00 ; Invoice No.099
 #+end_src
 
-* Process CSV Files
+* Process CSV Files using the Node.js Package ~csv~
 :PROPERTIES:
 :header-args: :comments both
 :END:
-The Node.js module [[https://csv.js.org/][~csv~]] contains the
+The Node.js package [[https://csv.js.org/][~csv~]] contains the following components:
 
-- [[https://csv.js.org/parse/][csv-parser]],
+- [[https://csv.js.org/parse/][csv-parse]],
 
-- [[https://csv.js.org/transform/][csv-stream-transformer]],
+- [[https://csv.js.org/transform/][csv-stream-transform]],
 
-- [[https://csv.js.org/stringify/][csv-stringifier]],
+- [[https://csv.js.org/stringify/][csv-stringify]],
 
 
-{{{noindent}}} all of which will be used in this project.  The pattern is to
-open a CSV file, parse a CSV string into records and pipe those records through
-the transformer to be massaged into shape.  From there the new data is saved in
-another CSV file and also an SQLite3 database using
+{{{noindent}}} all of which will be used in this project.
 
--  [[https://www.npmjs.com/package/sqlite3][~sqlite3~]] (see its [[https://github.com/mapbox/node-sqlite3/wiki/API][API]] also)
+{{{heading(Objective is to Transform CSV Bank Records into Ledger Records)}}}
 
+The objective is to open a CSV file as a stream, parse the file into CSV
+records, pipe those records through the transformer to be massaged into shape,
+and save the parsed and transformed records in an SQLite3 database using the
+Node.js package [[https://www.npmjs.com/package/sqlite3][~sqlite3~]] (see its [[https://github.com/mapbox/node-sqlite3/wiki/API][API]] also).  After the bank records have been
+transformed and placed into an SQLite database, they can be exported and sent
+through a Ledger converter to be saved as Ledger entries.
+
+{{{heading(Conversion)}}}
+
+The conversion process attempts to turn a single entry accounting system into a
+double entry accounting system.  There are quite a number of programs that
+attempt to make this process as painless as possible, but I have not had an
+opportunity to vet any of them except Ledger's own, the {{{command(convert}}}
+command.  At this point, that is the one this project uses, but I plan on
+looking at some of the others in the future.
+
+{{{heading(Processing CSV Files)}}}
 
 The processing of a CSV file, therefore, involves the following steps and
 Node.js modules:
 
-1. Find the correct CSV file (using ~FileSystem~) and open it as a [[https://nodejs.org/dist/latest-v12.x/docs/api/stream.html#stream_readable_streams][Readable
-   Stream]];
+1. Find the correct CSV file (using ~FileSystem~) and open it
+   as a Node.js [[https://nodejs.org/dist/latest-v12.x/docs/api/stream.html#stream_readable_streams][ReadableStream]] object, which implements the interface defined
+   by the [[https://nodejs.org/dist/latest-v12.x/docs/api/stream.html#stream_class_stream_readable][~stream.Readable~ class]].
 
   - [[*Set Up StreamReader][Set Up StreamReader]]
 
@@ -1552,8 +1587,9 @@ Node.js modules:
    - [[*Set Up the Stream Transform][Set Up the Stream Transform]]
 
 ** Set Up CSV-Stringify
+#+cindex:@file{csv-stringify}
 This section receives the transformed records from the Transform function and
-writes them to new csv files.  The new csv files will be located in the
+writes them to new CSV files.  The new CSV files will be located in the
 =WORKCSV= directory, e.g., ~WORK/workfin/csv~.  A file will be called, for
 example, ~usb_6815__2016.csv~.  Notice that this file name uses two
 underscores, whereas the source files use two dashes; in all other respects,
@@ -1912,15 +1948,33 @@ parser.on('finish', function () {
 });
 #+end_src
 
-** Set Up StreamReader
-This section implements the Stream Reader that reads the CSV file in as a large
-string of data and sends it to the csv parser via the parser's ~write~ method.
+** Set Up the CSV Source Stream
+This section implements a =Readable Stream= that reads the CSV file in as a
+string of data and sends it to a CSV ~parser~ via the parser's ~write()~
+method.
 
-CSV financial files are found in the directories =$WORKUSB_[6815|6831]/yyyy=,
-where =yyyy= can be 2004--2019, and on.  Given =[6815|6831]= and a year
-=[2004|2005...2019]=, the file path will be
-=$WORKUSB_6815/YYYY/usb_6815--yyyy.csv=.  This code makes sure the file exists
-and the user has proper permissions to read it before proceeding.
+{{{heading(CSV Financial Files)}}}
+
+CSV financial files are found in the set of directories 
+: =$WORKUSB/usb_[6815|6831|6151]/yyyy=,
+
+{{{noindent}}}where =yyyy= can be one of 2004--2019.  Given an account
+(=[6815|6831|6151]=) and a year (=[2004|2005...2019]=), the source path is
+constructed as:
+: =$WORKUSB/usb_ACCT/YYYY/usb_ACCT--yyyy.csv=.
+
+{{{heading(The {{{option(--csv)}}} Option)}}}
+
+The user supplies an account (=6815|6831|6151=) and a year (one of
+=[2016|2017|2018|2019]=) using the {{{option(--csv)}}} option on the command
+line, e.g.:
+: --csv 6815 2016
+
+{{{noindent}}}Given this data, a source CSV file can be found, validated by
+making sure that (1) the file exists and (2) the user has proper permissions to
+read it before proceeding, and then turned into a =Readable Stream=.  Once a
+=Readable Stream= has been obtained, it can be sent to the CSV parser via the
+parser's ~write()~ method.
 
 #+name:csv-sqlite3-process-csv-files
 #+header: :noweb yes
