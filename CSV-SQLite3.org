@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-17 Thu 22:56>
-#+macro: version Version 0.0.70
+#+date:<2019-10-18 Fri 00:17>
+#+macro: version Version 0.0.71
 
 #+texinfo: @insertcopying
 
@@ -608,11 +608,12 @@ Create the CSV-SQLite3 project and install the Node.js package dependencies:
 - ~accounting~
 
 
+#+caption:Create the CSV-SQLite3 Project
 #+name:create-CSV-SQLite3-project
 #+header: :exports both :results output
 #+begin_src sh
   yarn --yes --private init
-  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.70\",/' package.json
+  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.71\",/' package.json
   yarn add command-line-args command-line-usage csv sqlite3 accounting
   yarn add ssh://git@github.com:wlharvey4/wlparser.git#prod
 #+end_src
@@ -2342,17 +2343,34 @@ match on the new =payee= field.  During the {{{command(ledger convert)}}} run,
 only the original =payee= name as specified in the csv data seems to be used.
 
 * Update package.json Version
-In order to keep the ~package.json~ =version= number in sync with this
-document's version number, create a little script to update its version based
-upon the macro version's current value.  This little script will then be run
-whenever an installation occurs.
+In order to keep the ~package.json~ =version= number,
+[[create-CSV-SQLite3-project]], in sync with this document's version number, I have
+created a little script to update its version based upon the macro =version='s
+current value.  This macro is defined at the very top of this Org source file
+just below the title and date.  I update this version number after every
+modification to this source file and before commiting the change.  This little
+script will then be run whenever an installation occurs.
+
+This script can be run by invoking the Makefile target =update-version=.  This
+will checkout the =dev= branch, tangle the ~update-version.sh~ script into the
+~scripts/~ directory, run it, amend the most recent commit to include the
+updated version number, push the amended commit to Github, and finally create a
+=prod= branch (for =production=), install all of the files and documentation,
+and commit and push the =prod= branch to Github.  At this point, the package is
+ready to be cloned from Github and contains the most recent version number, the
+dependencies installed, and run.
+
+This program is a little {{{command(sed))}}} script that modifies this Org
+source file in-place (after creating and storing a backup of the source) by
+copying the version number found in the macro and updating the version number
+of the ~package.json~ file.  It runs very quickly.
 
 #+caption:Update ~package.json~ Version Number
 #+name:update-package.json-version-number
 #+header: :mkdirp yes
-#+header: :shebang "#!/usr/bin/env bash"
+#+header: :shebang "#!/usr/bin/env sh"
 #+begin_src sh :tangle scripts/update-version.sh
-sed -i '.bak' -E -e '
+sed -i .bak -E -e '
 /\#\+macro: version Version/bx
 /,\/\\"version\\":/by
 b
@@ -2446,7 +2464,7 @@ run-update-version: tangle-update-version
 tangle-update-version: $(SCRIPTS)/update-version.sh
 $(SCRIPTS)/update-version.sh: $(ORG)
 	emacs -Q --batch $(ORG) \
-	--eval '(search-forward "update-version.sh")' \
+	--eval '(search-forward ":tangle scripts/update-version.sh")' \
 	--eval '(org-babel-tangle '\''(4))'
 
 

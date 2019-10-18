@@ -72,7 +72,7 @@ run-update-version: tangle-update-version
 tangle-update-version: $(SCRIPTS)/update-version.sh
 $(SCRIPTS)/update-version.sh: $(ORG)
 	emacs -Q --batch $(ORG) \
-	--eval '(search-forward "update-version.sh")' \
+	--eval '(search-forward ":tangle scripts/update-version.sh")' \
 	--eval '(org-babel-tangle '\''(4))'
 
 
