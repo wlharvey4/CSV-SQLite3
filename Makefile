@@ -48,10 +48,22 @@ docs-dir: docs
 docs:
 	mkdir -vp docs
 
-update-version: $(ORG) tangle
+checkout-dev:
+	git checkout dev
+
+update-version: checkout-dev tangle-update-version
 	./$(SCRIPTS)/update-version.sh
 	mv -v $(ORG).bak $(WORKBAK)/$(ORG).$(shell date "+%s")
 	make clean-world
+	git add -u
+	git commit --amend -C HEAD
+	git push -f origin dev
+
+tangle-update-version: $(SCRIPTS)/update-version.sh
+$(SCRIPTS)/update-version.sh: $(ORG)
+	emacs -Q --batch $(ORG) \
+	--eval '(search-forward "update-version.sh")' \
+	--eval '(org-babel-tangle '\''(4))'
 
 clean:
 	-rm *~
