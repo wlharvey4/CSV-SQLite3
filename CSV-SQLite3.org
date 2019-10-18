@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-18 Fri 08:19>
-#+macro: version Version 0.0.72
+#+date:<2019-10-18 Fri 08:35>
+#+macro: version Version 0.0.73
 
 #+texinfo: @insertcopying
 
@@ -613,7 +613,7 @@ Create the CSV-SQLite3 project and install the Node.js package dependencies:
 #+header: :exports both :results output
 #+begin_src sh
   yarn --yes --private init
-  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.71\",/' package.json
+  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.73\",/' package.json
   yarn add command-line-args command-line-usage csv sqlite3 accounting
   yarn add ssh://git@github.com:wlharvey4/wlparser.git#prod
 #+end_src
@@ -2401,7 +2401,7 @@ SCRIPTS=scripts
 .PHONY: clean clean-world clean-prod
 .PHONY: tangle weave texi info pdf
 .PHONY: install install-docs install-info install-pdf open-pdf docs-dir
-.PHONY: update-dev checkout-dev create-prod
+.PHONY: update-dev update-prod checkout-dev checkout-prod
 .PHONY: update-version tangle-update-version run-update-version
 
 texi: $(TEXI)
@@ -2443,21 +2443,23 @@ $(DOCS):
 	mkdir -vp docs
 
 
-update-version: update-dev create-prod
-
-update-dev: checkout-dev run-update-version
-	git add -u
-	git commit --amend -C HEAD
-	git push -f origin dev
+update-version: update-dev update-prod
 
 checkout-dev:
 	git checkout dev
 
-create-prod: checkout-dev install clean-prod
+update-dev: checkout-dev run-update-version
+	git add -u
+	git commit --amend -C HEAD
+	git push origin +dev
+
+checkout-prod: clean-world checkout-dev
 	git checkout -B prod
+
+update-prod: checkout-prod install clean-prod
 	git add -A .
 	git commit -m "Branch:prod"
-	git push -f origin prod
+	git push origin +prod
 
 run-update-version: tangle-update-version
 	./$(SCRIPTS)/update-version.sh

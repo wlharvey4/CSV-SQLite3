@@ -6,9 +6,11 @@ PDF    = $(SOURCE).pdf
 DOCS   = docs
 SCRIPTS=scripts
 
-.PHONY: clean clean-world
-.PHONY: tangle weave texi info pdf open-pdf
-.PHONY: install install-docs install-info install-pdf docs-dir
+.PHONY: clean clean-world clean-prod
+.PHONY: tangle weave texi info pdf
+.PHONY: install install-docs install-info install-pdf open-pdf docs-dir
+.PHONY: update-dev update-prod checkout-dev checkout-prod
+.PHONY: update-version tangle-update-version run-update-version
 
 texi: $(TEXI)
 $(TEXI): $(ORG)
@@ -20,7 +22,7 @@ tangle: $(ORG)
 	emacs -Q --batch $(ORG) \
 	--eval '(org-babel-tangle-file "$(ORG)")'
 
-weave info install-info: $(DOCS)/$(INFO)
+info weave install-info: $(DOCS)/$(INFO)
 $(DOCS)/$(INFO): $(TEXI) | docs-dir
 	makeinfo --output=$(DOCS)/ $(TEXI)
 
@@ -44,26 +46,28 @@ $(DOCS)/$(PDF): $(TEXI) | docs-dir
 open-pdf: $(DOCS)/$(PDF)
 	open $(DOCS)/$(PDF)
 
-docs-dir: docs
-docs:
+docs-dir: $(DOCS)
+$(DOCS):
 	mkdir -vp docs
 
 
-update-version: update-dev create-prod
-
-update-dev: checkout-dev run-update-version
-	git add -u
-	git commit --amend -C HEAD
-	git push -f origin dev
+update-version: update-dev update-prod
 
 checkout-dev:
 	git checkout dev
 
-create-prod: checkout-dev install clean-prod
+update-dev: checkout-dev run-update-version
+	git add -u
+	git commit --amend -C HEAD
+	git push origin +dev
+
+checkout-prod: clean-world checkout-dev
 	git checkout -B prod
+
+update-prod: checkout-prod install clean-prod
 	git add -A .
 	git commit -m "Branch:prod"
-	git push -f origin prod
+	git push origin +prod
 
 run-update-version: tangle-update-version
 	./$(SCRIPTS)/update-version.sh
