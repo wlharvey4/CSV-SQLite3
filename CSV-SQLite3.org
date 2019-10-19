@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-19 Sat 08:07>
-#+macro: version Version 0.0.74
+#+date:<2019-10-19 Sat 11:51>
+#+macro: version Version 0.0.75
 
 #+texinfo: @insertcopying
 
@@ -584,11 +584,9 @@ This project's external dependencies are the following Node.js modules:
 - ~csv~ :: https://csv.js.org/
 - ~sqlite3~ :: https://github.com/mapbox/node-sqlite3/wiki
 - ~accounting~ :: http://openexchangerates.github.io/accounting.js/
-
                   provides simple and advanced number, money and currency
                   formatting.
-- wlparser :: https://git@github.com/wlharvey4/wlparser.git
-
+- ~wlparser~ :: https://git@github.com/wlharvey4/wlparser.git
               provides ~worklog~ reading and parsing capabilities, particular
               for obtaining check information, for example
 
@@ -1516,11 +1514,12 @@ outstanding invoices:
 :PROPERTIES:
 :header-args: :comments both
 :END:
-The Node.js package [[https://csv.js.org/][~csv~]] contains the following components:
+The Node.js package [[https://github.com/adaltas/node-csv][~node-csv~]] contains the following components (see
+https://csv.js.org):
 
 - [[https://csv.js.org/parse/][csv-parse]],
 
-- [[https://csv.js.org/transform/][csv-stream-transform]],
+- [[https://csv.js.org/transform/][csv-transform]],
 
 - [[https://csv.js.org/stringify/][csv-stringify]],
 
@@ -1652,14 +1651,17 @@ This code implements the stream transformer functionality, which is at the
 heart of this project.
 
 The Transformer is a [[https://nodejs.org/dist/latest-v12.x/docs/api/stream.html#stream_class_stream_transform][Node.js Transform Stream]].  This means it is capable of
-both reading and writing data.  In this project, it [[csv-transformer-write-method%0A][writes data]] in the CSV
-Parser, and then reads it here via its ~transformer.read()~ method.  This
-~transformer~ object has a ~transform()~ method that takes a function callback,
-whose purpose is to to /transform/ records that are read.  This is the heart of
-this project.  The ~transform()~ function is implemented in the following
-section, and returns completely transformed CSV bank records at its end.  These
-transformed records are then written to both a new CSV file, and the SQLite3
-database.
+both reading and writing data.  In this project, the CSV Parser gets a
+reference to the Transformer and [[csv-transformer-write-method%0A][writes parsed data]] to it; the Transformer
+receives this data via its ~transformer.read()~ method.  This ~transformer~
+object has a ~transform()~ method that takes a function callback, whose purpose
+is to to /transform/ records that are read.  This is the heart of this project.
+
+#+cindex:@code{transform()} function
+The ~transform()~ function is implemented in the following section, and returns
+completely transformed CSV bank records at its end.  These transformed records
+are then written to both a new CSV file, and the SQLite3 database via the CSV
+Stringifier object.
 
 #+attr_texinfo: :options CSV transform ( transform_callback )
 #+begin_defmethod
@@ -1672,8 +1674,8 @@ After it transforms the data, the transformer receives the new data via a
 
 #+cindex:@code{INSERT} into @file{db}
 #+cindex:@command{db.run}
-The transformed data will also be saved into the SQLite3 database via an
-=INSERT= statement executed by the ~db.run()~ method.
+The transformed data will be saved into the SQLite3 database via an =INSERT=
+statement executed by the ~db.run()~ method.
 
 *** Set Up the Transform Function
 The Transform Function receives a record and massages it into shape.  The
