@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-19 Sat 12:03>
-#+macro: version Version 0.0.76
+#+date:<2019-10-20 Sun 07:59>
+#+macro: version Version 0.0.77
 
 #+texinfo: @insertcopying
 
@@ -302,110 +302,43 @@ US Bank has the facility to download bank records in CSV form.  This program is
 designed to convert those downloaded CSV files into a form usable by SQLite,
 and then to use SQLite to process the data.
 
-{{{heading(Header Lines)}}}
+The USB table data columns and representative content coming from an exported
+download is:
 
-The header lines are:
-
-: "Date","Transaction","Name","Memo","Amount"
-
-{{{heading(Data Columns)}}}
-
-{{{subheading(Date)}}}
-
-A sample date is:
-
-: 1/4/2016
-
-This should be transformed into:
-
-: 2016-01-14
-
-{{{subheading(Transaction)}}}
-
-A =Transaction= is one of
-
-- =DEBIT=
-- =CREDIT=
-
-This should be transformed into:
-
-: debit | credit
-
-{{{subheading(Name)}}}
-
-A sample =name= entry is:
-
-: DEBIT PURCHASE -VISA USPS PO BOXES 66800-3447779 DC
-
-This should be transformed into:
-
-: visa purchase usps po boxes
-
-{{{subheading(Memo)}}}
-
-A sample =memo= entry is:
-
-: Download from usbank.com. USPS PO BOXES 66800-3447779 DC
-
-The =Download from usbank.com= should be removed in all cases.  The extraneous
-numbers should be removed whenever possible.
-
-{{{subheading(Amount)}}}
-
-- -66.0000
-
-This should be transformed into:
-
-: $-66.00
-
-* SQLite Tables
-#+cindex:tables
-The minimum SQLite tables that should be created are:
-
-- usb :: includes business (6815), trust (6831), personal (6151) data
-- cases :: 190301, etc.
-- people :: John Doe, Mary Jane, etc.
-- businesses :: Law Office of ..., etc.
-- checks :: holds check information parsed from ~worklog.<year>.otl~ files
+- Date :: ="9/3/2019"=
+- Transaction :: ="DEBIT"= or ="CREDIT"=
+- Name :: ="DEBIT PURCHASE -VISA COMCAST PORTLAND800-266-2278OR"=
+- Memo :: ="Download from usbank.com. COMCAST PORTLAND800-266-2278OR"=
+- Amount :: ="-81.0400"=
 
 
-More can be created as needed.
+The converted USB table data (for both the SQLite3 DB and the CSV) should be:
 
-** SQLite USB Table Columns
-#+cindex:columns, usb table
-#+cindex:usb table columns
-The columns that should be created for the usb bank tables are:
-
-- =rowid= (implicit creation)
-- =acct= in the form of =usb_6815|usb_6831|usb_6151=
-- =date= in the form of =yyyy-mm-dd=
-- =trans= containing either =CREDIT | DEBIT=
-- =checkno= containing a check number, if present (=check= is a reserved word
-  and throws an error)
-- =txfr= containing a direction arrow (=<= or =>=) and a bank account (=usb_6151=)
-- =payee=
-- =category=
-- =memo=
-- =desc1=
-- =desc2=
-- =caseno= containing a related case number (=case= is apparently a reserved
-  word and throws an error)
-- =amount= in the form =\pm##,###.##=
+- =rowid= :: (implicit creation)
+- =acct= :: a String in the form of =usb_6815|usb_6831|usb_6151=
+- =date= :: a Date in the form of =yyyy-mm-dd=
+- =trans= :: an Enum containing either =credit | debit=
+- =checkno= :: a String containing a check number, if present (=check= is a
+               reserved word and throws an error)
+- =txfr= :: a String containing a direction arrow (=<= or =>=) and a bank
+            account (e.g. =usb_6151=)
+- =payee= :: a String
+- =category= :: a String
+- =memo= :: a String
+- =desc1= :: helpful information obtained from parsing
+- =desc2= :: helpful information obtained from parsing
+- =caseno= :: containing a related case number (=case= is a reserved word and
+              throws an error)
+- =amount= :: in the form =\pm##,###.##=
+- =OrigPayee= :: stored for reference
+- =OrigMemo= :: stored for reference
 
 
-#+caption: USB Table Column Names
-#+name:usb-table-column-names
-| rowid       | acct       | date       | trans  | checkno | txfr       | payee    | category | memo | desc1 | desc2 | caseno  | amount    |
-|-------------+------------+------------+--------+---------+------------+----------+----------+------+-------+-------+---------+-----------|
-| primary key | =usb_6815= | yyyy-mm-dd | credit | ####    | < usb 6151 | text     | text     | text | text  | text  | integer | ##,###.## |
-| implicit    | =usb_6831= | not null   | debit  | null    | > usb 6831 | not null | null     | null | null  | null  | null    | not null  |
-| creation    | =usb_6151= |            |        |         | null       |          |          |      |       |       |         |           |
-|-------------+------------+------------+--------+---------+------------+----------+----------+------+-------+-------+---------+-----------|
+The following code is a =noweb= source, to be expanded into some code later.
 
-#+caption:Define the USB Table Schema
-#+name: define-usb-table-schema
-#+header: :mkdirp yes
-#+begin_src js :tangle lib/sql/definitions.js
+#+caption:Define the USB Table Data Schema
+#+name:define-usb-table-data-schema
+#+begin_src sql
   usb (
          rowid     INTEGER PRIMARY KEY NOT NULL,
          acct      TEXT NOT NULL,
@@ -424,201 +357,220 @@ The columns that should be created for the usb bank tables are:
          OrigMemo  TEXT NOT NULL )
 #+end_src
 
-The database column names are identical to the SQL column names except for
-=rowid=, which is missing since it is auto-generated by SQLite3.
+** SQLite3 USB Tables
+#+cindex:tables, sqlite
+#+cindex:sqlite tables
+The minimum SQLite tables that should be created are:
 
-#+name:define-database-tables-and-columns
-#+begin_src js :tangle lib/sql/definitions.js
-    exports.DB_TABLES = {
-        usb: 'usb',
-        checks: 'checks',
-    };
+- usb :: includes business (6815), trust (6831), personal (6151) data
+- checks :: holds check information parsed from ~worklog.<year>.otl~ files
+- cases :: 190301, etc.
+- people :: John Doe, Mary Jane, etc.
+- businesses :: Law Office of ..., etc.
 
-    exports.DB_ACCTS = {
-        '6815': 'Business',
-        '6831': 'Trust',
-        '6151': 'Personal',
-    };
 
-    exports.DB_YEARS = [
-        '2016',
-        '2017',
-        '2018',
-    ]
+More can be created as needed.
 
-    exports.DB_COLS = [
-        'acct',
-        'date',
-        'trans',
-        'checkno',
-        'txfr',
-        'payee',
-        'category',
-        'note',
-        'desc1',
-        'desc2',
-        'caseno',
-        'amount',
-        'OrigPayee',
-        'OrigMemo',
-    ];
+#+cindex:@file{db_data.js}
+#+cindex:db_data
+#+cindex:DB Data table info
+#+caption:Define SQLite DB Data
+#+name:define-sqlite-db-data
+#+header: :mkdirp yes
+#+begin_src js -n :tangle lib/sql/db_data.js
+  /* sql/data */
 
-    exports.EXPORT_DB_COLS = [
-        'rowid',
-        'acct',
-        'date',
-        'trans',
-        'checkno',
-        'txfr',
-        'payee',
-        'category',
-        'note',
-        'caseno',
-        'amount',
-    ];
+  exports.DB_TABLES = {
+      usb:    'usb',
+      checks: 'checks',
+  };
 
-    exports.CHECKS_COLS = [
-        'acct',
-        'checkno',
-        'date',
-        'payee',
-        'subject',
-        'purpose',
-        'caseno',
-        'amount'
-    ];
+  exports.DB_ACCTS = {
+      '6815': 'Business',
+      '6831': 'Trust',
+      '6151': 'Personal',
+  };
+
+  exports.DB_YEARS = [
+      '2016',
+      '2017',
+      '2018',
+  ];
+
+  exports.DB_COLS = [
+      'acct',
+      'date',
+      'trans',
+      'checkno',
+      'txfr',
+      'payee',
+      'category',
+      'note',
+      'desc1',
+      'desc2',
+      'caseno',
+      'amount',
+      'OrigPayee',
+      'OrigMemo',
+  ];
+
+  exports.EXPORT_DB_COLS = [
+      'rowid',
+      'acct',
+      'date',
+      'trans',
+      'checkno',
+      'txfr',
+      'payee',
+      'category',
+      'note',
+      'caseno',
+      'amount',
+  ];
 
 #+end_src
 
-** SQLite Checks Table Columns
+** SQLite3 Checks Table
+
+#+cindex:Checks table
+#+cindex:table, checks
+There will also be a Checks table which will hold check data parsed from the
+=WORKLOG= files.  See [[Find and Store Checks]].
+
 The column names for the =checks= table columns are:
 
-- =rowid=
-- =acct= e.g., 6815, 6831, 6151
-- =checkno=, e.g., 1001, 1002
-- =date=
-- =payee=
-- =subject=
-- =purpose=
-- =caseno=, e.g., 190301, 190205
-- =amount=
+- =rowid= :: implicit creation
+- =acct=  :: Enum of =6815 | 6831 | 6151=
+- =checkno= :: String, e.g., 1001, 1002
+- =date= :: Date =yyyy-mm-dd=
+- =payee= :: String
+- =subject= :: String
+- =purpose= :: String
+- =caseno= :: e.g., 190301, 190205
+- =amount= :: =\pm$#,###.##=
 
 
-#+caption:Checks Table Columns and Data Types
-#+name:checks-table-columns-and_data-types
-| rowid       | acct     | checkno  | date     | payee    | subject  | purpose | caseno | amount   |
-|-------------+----------+----------+----------+----------+----------+---------+--------+----------|
-| INTEGER     | TEXT     | INTEGER  | TEXT     | TEXT     | TEXT     | TEXT    | TEXT   | REAL     |
-| PRIMARY KEY | NOT NULL | NOT NULL | NOT NULL | NOT NULL | NOT NULL |         |        | NOT NULL |
-|-------------+----------+----------+----------+----------+----------+---------+--------+----------|
+The following is another =noweb= data source.
 
 #+caption:Define Checks Table Schema
 #+name:define-checks-table-schema
 #+begin_src sql
   checks (
-  	acct		TEXT NOT NULL,
-  	checkno		TEXT NOT NULL,
-  	date		TEXT NOT NULL,
-  	payee		TEXT NOT NULL,
-  	subject		TEXT NOT NULL,
-  	purpose		TEXT,
- 	caseno		TEXT NOT NULL,
-  	amount		REAL NOT NULL
+          acct		TEXT NOT NULL,
+          checkno		TEXT NOT NULL,
+          date		TEXT NOT NULL,
+          payee		TEXT NOT NULL,
+          subject		TEXT NOT NULL,
+          purpose		TEXT,
+          caseno		TEXT NOT NULL,
+          amount		REAL NOT NULL
   )
 #+end_src
 
-#+name:define-database-tables-and-columns
-#+BEGIN_SRC js
-#+END_SRC
+#+cindex:@file{db_data.js}
+#+caption:Define SQLite3 Checks Data
+#+name:define-sqlite3-checks-data
+#+begin_src js +n :tangle lib/sql/db_data.js
+  exports.CHECKS_COLS = [
+      'acct',
+      'checkno',
+      'date',
+      'payee',
+      'subject',
+      'purpose',
+      'caseno',
+      'amount'
+  ];
+#+end_src
 
-* CSV-SQLite3 Usage
-- ~csv-sqlite3 --csv <usb-acct> <year> [--attach <db>] [--checks]
+** The Environment
+This program, and in fact all =Worklog= programs, require depend upon a certain
+environment being present.  This module returns that environment after checking
+for the existence of the dependencies.
 
-  - <usb-acct> is one of: =6815|6831|6151=
+#+caption:Check and Return the Environment
+#+name:check-and-return-the-environment
+#+header: :mkdirp yes
+#+begin_src js -n :tangle config/env.js
+  /* config/env */
 
-  - <year> is one of =2016|2017|2018=
+  exports.WORK    = process.env.WORK;
+  exports.WORKDB  = process.env.WORKDB;
+  exports.WORKFIN = process.env.WORKFIN;
+  exports.WORKUSB = process.env.WORKUSB;
+  exports.WORKCSV = process.env.WORKCSV;
+  exports.WORKBAK = process.env.WORKBAK;
+  exports.WORKLEDGER = process.env.WORKLEDGER;
 
-  - ~--attach <db>~ is optional; the default is ~workfin.sqlite~, otherwise
-    ~<db>.sqlite~
+  (function check() {
+      for (env in exports) {
+          if (typeof exports[env] === 'undefined') {
+              console.error(`ERROR: Environment variable ${env} is not defined. Halting execution.`);
+              process.exit(1);
+          }
+      }
+  })();
+#+end_src
 
-  - ~--checks~ parses worklog.<year>.otl files for check data and places it
-    into <db> in a =checks= documents
+* Create the Project
 
-  - Transform downloaded data and save in a new CSV file and a new sqlite3
-    database.  The source CSV files are found at:
+Creating the project involves extracting all of the files (tangling),
+installing a ~package.json~ file, identifying and importing dependency
+packages, and creating an entry point for the project's use, an ~index.js~
+file.
 
-    ~$WORKFIN/src/usb/usb_{6815|6831|6151}/{2016|2017|2018}/usb_6815--2016.csv~
-
-  - The transformed CSV files are found at:
-
-    ~$WORKFIN/csv/usb_{6815|6831|6151}__{2016|2017|2018}.csv~
-
-  - The new SQLite3 database is found at:
-
-    ~$WORKFIN/db/workfin.sqlite~
-
-  - The exported database file in CSV format will be found at:
-
-    ~$WORKFIN/csv/workfin.csv~
-
-- ~csv-sqlite3 --delete [<db>]~ ::
-
-     Delete the SQLite3 database file ~<db>.sqlite~, or ~workfin.sqlite~ if left
-     blank; also delete the CSV files in ~csv/~;
-
-- ~csv-sqlite3 --log-level <level>~
-
-  Set a log level (default is =warn=)
-
-* Creating the Project
-This section deals with creating the CSV-SQLite3 project and identifying its
-dependencies.  It also deals with the project's main ~index.js~ file.
-
-** The Project's Dependencies
-{{{heading(External Dependencies)}}}
-
-#+cindex:external dependencies
-#+cindex:dependencies, external
-This project's external dependencies are the following Node.js modules:
-
-- ~command-line-args~ :: https://github.com/75lb/command-line-args#readme
-- ~command-line-usage~ :: https://github.com/75lb/command-line-usage
-- ~csv~ :: https://csv.js.org/
-- ~sqlite3~ :: https://github.com/mapbox/node-sqlite3/wiki
-- ~accounting~ :: http://openexchangerates.github.io/accounting.js/
-                  provides simple and advanced number, money and currency
-                  formatting.
-- ~wlparser~ :: https://git@github.com/wlharvey4/wlparser.git
-              provides ~worklog~ reading and parsing capabilities, particular
-              for obtaining check information, for example
-
-
-{{{heading(Node.js Internal Dependencies)}}}
-
-#+cindex:internal dependencies
-#+cindex:dependencies, external
-This project's Node.js internal dependencies are the following:
-
-- ~File System (fs)~ :: File System for working with files
-
-- ~Path (path)~ :: Utilities for working with file and directory paths
-
-- ~Utilities (util)~ :: Utilities for inspecting objects
-
-- ~Assert (assert)~ :: Assertion functions for verifying invariants
+** Extract all of the Modules
 
 #+name:tangle-CSV-SQLite3-project
 #+begin_src emacs-lisp :results output :exports results
 (org-babel-tangle-file "CSV-SQLite3.org")
 #+end_src
 
-** Create the CSV-SQLite3 Package and Dependencies
+** Usage
 
-#+cindex:@file{CSV-SQLite3} project
-#+cindex:@file{csv-sqlite3} package, dependencies
-#+cindex:@file{package.json}, @file{csv-sqlite3}
-Create the CSV-SQLite3 project by initializing a ~package.json~ and installing
-its dependencies:
+: node csv-sqlite3 --csv ACCT YEAR  [--attach [DB]]
+
+: node csv-sqlite3 --delete [DB]
+
+: node csv-sqlite3 --export ACCT YEAR [--attach [DB]]
+
+The first version identifies a CSV source file to import into an SQLite3
+database.  The only required information is the ACCT and YEAR of the CSV file.
+If nothing else is given, the operation is assumed to be {{{option(--attach)}}}
+and the name of the database defaults to ~workfin.sqlite3~.
+
+The second version deletes the SQLite3 database file and any exported CSV
+files.
+
+The third version exports data from the SQLite3 database into a CSV file of the
+same name as the database file, and converts the data into Ledger format and
+saves it as a separate Ledger file.  The name of the database to export from is
+assumed to be the default unless the {{{option(--attach)}}} option is given
+with a different name.
+
+** Helper Scripts
+
+Two helper scripts are also created by this source file:
+
+- ~catuniq~ :: imports newly exported data from US Bank into the proper CSV
+               source file.  The two required options are the USB account to
+               catenate unto, e.g., =usb_6815=, and the destination path, which
+               can be omitted if the environment variable =WORKUSB= is defined
+               pointing to the source USB CSV files.  Files exported from US
+               Bank have the path: ~$HOME/Downloads/export.csv~.
+
+               : catuniq --acct ACCT [--dest PATH]
+
+- ~find-checks~ :: parses a WORKLOG file of a particular year for check
+                   information and stores it in the SQLite3 database in a
+                   =checks= table.
+
+                   : find-checks YEAR
+
+** Install Package.json and Dependencies
+
+The package's ~package.json~ file is created using Yarn, which is also used to
+install external dependencies.
 
 - ~command-line-ars~
 - ~command-line-usage~
@@ -627,13 +579,12 @@ its dependencies:
 - ~accounting~
 - ~wlparser~
 
-
-#+caption:Create the CSV-SQLite3 Project
-#+name:create-CSV-SQLite3-project
+#+caption:Create the CSV-SQLite3 Package
+#+name:create-CSV-SQLite3-package
 #+header: :exports both :results output
 #+begin_src sh
   yarn --yes --private init
-  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.73\",/' package.json
+  sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.76\",/' package.json
   yarn add command-line-args command-line-usage csv sqlite3 accounting
   yarn add ssh://git@github.com:wlharvey4/wlparser.git#prod
 #+end_src
@@ -644,47 +595,29 @@ its dependencies:
 cat package.json
 #+END_SRC
 
-** Create the Package ~index.js~ File and Import its Dependencies
-:PROPERTIES:
-:header-args: :comments both
-:END:
+** Create the Index.js File
 
-#+cindex:@file{index.js}
-After the ~csv-sqlite3~ package has been created and installed, create the
-package's ~index.js~ file and import the project's dependencies.
+The entry point to the project is through its ~index.js~ file.  This file
+processes the commndline arguments and dispatches to the appropriate points,
 
 #+name:csv-sqlite3-dependencies
 #+header: :mkdirp yes
 #+begin_src js -n :tangle index.js
 /* index.js */
 
-const fs     = require('fs');
-const path   = require('path');
-const util   = require('util');
-const assert = require('assert').strict;
-
 const cl_args  = require('command-line-args');
 const cl_usage = require('command-line-usage');
-const csv      = require('csv');
-const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
-const accounting = require('accounting');
+
 #+end_src
 
-** Establish Database Table Name and Columns
-#+name:database-table-columns
-#+header: :noweb yes
-#+begin_src js +n :tangle index.js
-<<define-database-tables-and-columns>>
-#+end_src
-
-* Working with the Command Line
+** Working with the Command Line
 :PROPERTIES:
 :header-args: :comments both
 :END:
 Here is implementation of command-line argument parsing and the generation of a
 usage message triggered by requesting the option =--help=.
 
-** Command Line Usage
+*** Command Line Usage
 #+cindex:command-line usage
 #+cindex:usage
 #+cindex:@command{command-line-usage}
@@ -711,7 +644,7 @@ const usage = cl_usage(sections);
 console.log(usage);
 #+end_src
 
-** Command Line Argument Processing
+*** Command Line Argument Processing
 #+cindex:command-line arguments
 #+cindex:arguments
 #+cindex:@command{command-line-arguments}
@@ -742,17 +675,19 @@ option:
 {{{subheading(Attach and Delete a Database)}}}
 
 The database is attachable (it will be created automatically if it does not
-exist), and deleteable:
+exist), and deleteable; this option need only be used if a non-standard
+database name is used.  The default name is ~workfin.sqlite~.
 
-: csv-sqlite3 --attach <db> | -a <db-name>
+: csv-sqlite3 --attach | -a <db-name>
 
-: csv-sqlite3 --delete <db> | -d <db-name>
+: csv-sqlite3 --delete | -d <db-name>
 
 {{{subheading(Export the SQLite3 data to CSV)}}}
 
-Export SQLite3 data into a CSV file of the same name:
+Export SQLite3 data identified by <ACCT> and <YEAR> into a CSV file of the same
+database name; use {{{option(--attach)}}} to identify a non-default database.
 
-: csv-sqlite3 --export <db> | -e <db-name>
+: csv-sqlite3 --export | -e <ACCT> <YEAR>
 
 {{{subheading(Set a Log Level)}}}
 
@@ -767,7 +702,7 @@ Export SQLite3 data into a CSV file of the same name:
       { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
       { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file and related CSV files.' },
       { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
-      { name: 'export', alias: 'e', type: String,  description: 'Export sqlite3 data into a csv file (default \'workfin.csv\'' },
+      { name: 'export', alias: 'e', type: String,  description: 'Export identified sqlite3 data into a csv file', multiple: true },
       { name: 'checks',             type: Boolean, description: 'Find checks in worklog.<year>.otl and save to sqlite3 database checks file.' },
       { name: 'log-level', alias: 'l', type: Number, description: 'Set a log level 0..10' },
   ];
@@ -817,55 +752,53 @@ During development, call the ~verbose()~ method on the ~sqlite3~ object to
 enable better stack traces.  In production, remove this call for improved
 performance.
 
-#+name:csv-sqlite3-create-database
+#+caption:Create the SQLite3 Database
+#+name:create-sqlite3-database
+#+header: :mkdirp yes
 #+header: :noweb yes
-#+begin_src js +n :tangle index.js
+#+begin_src js -n :tangle lib/sql/db.js
+  /* lib/sql/db */
 
-  if ( !process.env.WORKDB ) { // $WORKFIN/db
-      console.error('You must define a shell variable named WORKDB as a base directory for the .sqlite database file.');
-      process.exit(1);
-  }
-  if ( !process.env.WORKCSV ) { // $WORKFIN/csv
-      console.error('You must define a shell variable named WORKCSV as a base directory for the .csv files.');
-      process.exit(1);
-  }
-  if ( !process.env.WORKLEDGER ) { // $WORKFIN/ledger
-      console.error('You must define a shell variable named WORKLEDGER as a base directory for the .ledger files.');
-      process.exit(1);
-  }
-  if ( !process.env.WORKBAK) { // $WORK/workbak
-      console.error('You must define a shell variable named WORKBAK as a backup directory for storing deleted files.');
-      process.exit(1);
-  }
+  const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
+  const ENV = require('../../config/env.js');
+  const DATA = require('../');
+  const DB_DEFAULT = 'workfin';  // default sqlite db name
 
-  const WORKDB     = process.env.WORKDB;     // base directory for .sqlite db files
+  const WORKDB = ENV.WORKDB;     // base directory for .sqlite db files
   if (!fs.existsSync(WORKDB)) { fs.mkdirSync(WORKDB); }
-  const WORKCSV    = process.env.WORKCSV;    // base directory for .csv files
-  if (!fs.existsSync(WORKCSV)) { fs.mkdirSync(WORKCSV); }
-  const WORKLEDGER = process.env.WORKLEDGER; // base directory for .ledger files
-  const WORKBAK    = process.env.WORKBAK;    // base directory for storing deleted files
 
-  const DB_DEFAULT = 'workfin';	       // default sqlite db name
+  const WORKCSV = ENV.WORKCSV;   // base directory for .csv files
+  if (!fs.existsSync(WORKCSV)) { fs.mkdirSync(WORKCSV); }
+
+  const WORKLEDGER = ENV.WORKLEDGER; // base directory for .ledger files
+  if (!fs.existsSync(WORKLEDGER)) { fs.mkdirSync(WORKLEDGER); }
+
+  const WORKBAK = ENV.WORKBAK;    // base directory for storing deleted files
+  if (!fs.existsSync(WORKBAK)) { fs.mkdirSync(WORKBAK); }
+
   const db_file = options.attach ? options.attach :    // use provided option for attaching
                   options.delete ? options.delete :    // use provided option for deletion
                   DB_DEFAULT;  	       	         // if no provided option, use the default name
 
-  const db_path = path.format({
-      dir: WORKDB,
-      name: db_file,
-      ext: '.sqlite'
-  });
-  console.log(`db_path: ${db_path}`);
+  /*--ATTACH--*/
+  exports.attach = function (db_file) {
+      console.log('attaching...');
 
-  const csv_path = path.format({
-      dir: WORKCSV,
-      name: db_file,
-      ext: '.csv'
-  });
-  console.log(`csv_path: ${csv_path}`);
+      const ({db_path, csv_path}) = format_paths(db_file);
+
+      const db = new sqlite3.Database(db_path, err => {
+          if (err) {
+              return console.error(`Error opening database file ${db_path}: ${err.message})`);
+          }
+          console.log(`Successfully attached to database file ${db_path}`);
+      });
+      db.serialize();
+      db.run(`CREATE TABLE IF NOT EXISTS
+      <<define-usb-table-schema>>`);
+  }
 
   /*---DELETE--*/
-  if (options.hasOwnProperty('delete')) {
+  exports.delete = function (db_file) {
 
       const WORKBAK_DB = path.format({
           dir: WORKBAK,
@@ -972,19 +905,6 @@ performance.
       process.exit(0);
   }
 
-  /*--ATTACH--*/
-  // attach in all situations except --delete
-  console.log('attaching...');
-  const db = new sqlite3.Database(db_path, err => {
-      if (err) {
-          return console.error(`Error opening database file ${db_path}: ${err.message})`);
-      }
-      console.log(`Successfully attached to database file ${db_path}`);
-  });
-  db.serialize();
-  db.run(`CREATE TABLE IF NOT EXISTS
-      <<define-usb-table-schema>>`);
-
   // year is needed for checks, so define it here
   const [acct,year] = options.csv;
   if (!year) {
@@ -992,6 +912,26 @@ performance.
     process.exit(1);
   }
   const wl_year = parseInt(year, 10);
+
+
+  function format_paths (db_path) {
+
+      const db_path = path.format({
+          dir: WORKDB,
+          name: db_file,
+          ext: '.sqlite'
+      });
+      console.log(`db_path: ${db_path}`);
+
+      const csv_path = path.format({
+          dir: WORKCSV,
+          name: db_file,
+          ext: '.csv'
+      });
+      console.log(`csv_path: ${csv_path}`);
+
+      return ({db_path, csv_path});
+  }
 #+end_src
 
 * Find and Store Checks
@@ -1579,6 +1519,8 @@ Node.js modules:
 
    - [[*Set Up the Stream Transform][Set Up the Stream Transform]]
 
+
+** Set up Data Definitions
 ** Set Up CSV-Stringify
 #+cindex:@file{csv-stringify}
 This section receives the transformed records from the Transform function and
@@ -1863,32 +1805,34 @@ records, for example.
 #+caption:Create the CSV File Transform
 #+name:create-csv-file-transform
 #+header: :mkdirp yes
-#+begin_src js +n :tangle lib/csv/file_transformer.js
+#+begin_src js -n :tangle lib/csv/file_transformer.js
   /* csv/file_transformer */
 
-  const stringifier  = require('./lib/csv/file_stringifier')(options.csv);
-  const transform_fn = require('./lib/csv/transform_function');
-  const transformer  = require('csv').transform(transform_fn);
+  const stringifier   = require('./lib/csv/file_stringifier')(options.csv);
+  const transform_fn  = require('./lib/csv/transform_function');
+  exports.transformer = require('csv').transform(transform_fn);
+  const db      = require('./lib//sql/db');
+  const db_data = require('./lib/sql/definitions');
 
   /* TRANSFORMER reads records through its TRANSFORM_FUNCTION */
   /* -------------------------------------------------------- */
-  transformer.on('readable', function() {
+  transformer.on('readable', function() { // the rabbit does its thing
       let record;
-      while ((record = transformer.read())) {
+      while ((record = transformer.read())) { // and spits it out
           console.log(`Transformer record:\n${util.inspect(record)}`);
 
           /* STRINGIFIER WRITE Records */
           /* ------------------------- */
-          stringifier.write(record);
+          stringifier.write(record); // and continue down the rabbit hole
 
 
 
           /* DB RUN---INSERT RECORDS */
           /* ----------------------- */
-          const tab_name  = DB_TABLES['usb'];
-          const col_names = DB_COLS.join(',');
-          const col_phs   = DB_COLS.map(c => '?').join(',');
-          const col_values= DB_COLS.map(c => record[c]);
+          const tab_name  = db_data.DB_TABLES['usb'];
+          const col_names = db_data.DB_COLS.join(',');
+          const col_phs   = db_data.DB_COLS.map(c => '?').join(',');
+          const col_values= db_data.DB_COLS.map(c => record[c]);
 
           let sql = `INSERT INTO ${ tab_name }( ${ col_names } )
                      VALUES ( ${ col_phs } )`;
@@ -1946,7 +1890,7 @@ stream transformer using its =WRITE= method.
   parser.on('readable', function() {
       let record;
       while (record = parser.read()) {
-          transform.write(record);
+          transform.write(record); // continue down the rabbit hole
       }
   }).on('error', function(err) {
       console.error(err.message); 
@@ -1995,26 +1939,30 @@ parser's ~write()~ method.
 #+name:create-csv-source-stream
 #+header: :mkdirp yes
 #+begin_src js -n :tangle lib/csv/source_stream.js
-  /* csv/source_stream */
+    /* csv/source_stream */
 
   const fs   = require('fs');
   const path = require('path');
+  const {WORKUSB} = require('../../config/env');
 
-  exports.csv;
+  module.exports = function(csv_info) { // csv_info = options.csv = [acct, year]
 
-  try {
-      exports.csv_stream = fs.createReadStream(validate_data(exports.csv), {encoding: 'utf8'});
-  } catch (err) {
-      console.error(err.message);
-      process.exit(1);
+      try {
+          return csv_stream = fs.createReadStream(
+              validate_data(csv_info),
+              {encoding: 'utf8'}
+          );
+      } catch (err) {
+          console.error(err.message);
+          process.exit(1);
+      }
   }
 
   function validate_data ([acct, year]) {
       /* 'acct' and 'year' come from the command-line option '--csv'
-          acct = options.csv[0]
-          year = options.csv[1] */
-      const WORKUSB = process.env.WORKUSB;
-      if (!WORKUSB) throw new ReferenceError('You must create a valid WORKUSB environment variable.');
+         acct = options.csv[0]
+         year = options.csv[1] */
+
       const csv_path = path.join(
           WORKUSB,
           `usb_${acct}`,
@@ -2041,20 +1989,18 @@ parser's ~write()~ method.
     if (options.hasOwnProperty('csv')) {
         // const acct = options.csv[0],
         //       year = options.csv[1];
-        // const usb_acct = `usb_${acct}`;
 
         const csv_source_stream = require('./lib/csv/source_stream');
         const csv_file_parser   = require('./lib/csv/file_parser');
     
         const csv_file_stream   = csv_source_stream(options.csv);
-        csv_file_stream.pipe(csv_file_parser);
+        csv_file_stream.pipe(csv_file_parser); // down the rabbit hole
 
         csv_file_stream.on('error', function(err) {
-
             console.error(err.message);
+            process.exit(1);
 
         }).on('end', function () {
-
             console.log('Reader finished reading data.');
 
         });
@@ -2484,6 +2430,7 @@ INFO   = $(SOURCE).info
 PDF    = $(SOURCE).pdf
 DOCS   = docs
 LIB    = lib
+CONFIG = config
 SCRIPTS=scripts
 
 .PHONY: clean clean-world clean-prod
@@ -2566,7 +2513,7 @@ clean:
 clean-world: clean
 	-rm *.{texi,info,pdf,js,json,lock,log,bak}
 	-rm -rf LogReader
-	-rm -rf node_modules $(SCRIPTS) $(DOCS) $(LIB)
+	-rm -rf node_modules $(SCRIPTS) $(DOCS) $(LIB) $(CONFIG)
 
 clean-prod: clean
 	-rm *.{texi,org} Makefile LogReader

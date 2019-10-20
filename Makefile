@@ -5,6 +5,7 @@ INFO   = $(SOURCE).info
 PDF    = $(SOURCE).pdf
 DOCS   = docs
 LIB    = lib
+CONFIG = config
 SCRIPTS=scripts
 
 .PHONY: clean clean-world clean-prod
@@ -87,7 +88,7 @@ clean:
 clean-world: clean
 	-rm *.{texi,info,pdf,js,json,lock,log,bak}
 	-rm -rf LogReader
-	-rm -rf node_modules $(SCRIPTS) $(DOCS) $(LIB)
+	-rm -rf node_modules $(SCRIPTS) $(DOCS) $(LIB) $(CONFIG)
 
 clean-prod: clean
 	-rm *.{texi,org} Makefile LogReader
