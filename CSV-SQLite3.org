@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 09:03>
-#+macro: version Version 0.0.79
+#+date:<2019-10-20 Sun 10:25>
+#+macro: version Version 0.0.80
 
 #+texinfo: @insertcopying
 
@@ -620,6 +620,8 @@ processes the commndline arguments and dispatches to the appropriate points,
 
 const cl_args  = require('command-line-args');
 const cl_usage = require('command-line-usage');
+const ENV = require('./config/env');
+const DB_DEFAULT = 'workfin';
 
 #+end_src
 
@@ -735,6 +737,17 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
   }
   console.log(`Log-level set at: ${LOG_LEVEL}`);
 
+  /* GET A DB FILE PATH */
+  if (!options.hasOwnProperty('attach')) {
+      options.attach = DB_DEFAULT;
+  }
+  options.attach = path.format({
+      path: ENV.WORKDB,
+      name: options.attach,
+      ext: '.sqlite3'
+  });
+  console.log(`db file path is: ${options.attach}`);
+
   if (options.hasOwnProperty('csv')) { // process --csv ACCT YEAR
       // const acct = options.csv[0],
       //       year = options.csv[1];
@@ -755,6 +768,14 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
 
       csv_file_stream.pipe(csv_file_parser); // down the rabbit hole
   }
+
+    // year is needed for checks, so define it here
+    const [acct,year] = options.csv;
+    if (!year) {
+      console.error('ERROR: year is not defined.');
+      process.exit(1);
+    }
+    const wl_year = parseInt(year, 10);
 
 #+end_src
 
@@ -793,21 +814,22 @@ performance.
   /* lib/sql/db */
 
   const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
-  const ENV = require('../../config/env.js');
+  const ENV = require('../../config/env');
   /*const DATA = require('../db_data');*/
-  const DB_DEFAULT = 'workfin';  // default sqlite db name
 
-  const WORKDB = ENV.WORKDB;     // base directory for .sqlite db files
-  if (!fs.existsSync(WORKDB)) { fs.mkdirSync(WORKDB); }
+  const DB_DEFAULT = 'workfin';      // default sqlite db name
 
-  const WORKCSV = ENV.WORKCSV;   // base directory for .csv files
-  if (!fs.existsSync(WORKCSV)) { fs.mkdirSync(WORKCSV); }
+  const WORKDB = ENV.WORKDB;         // base directory for .sqlite db files
+  if (!fs.existsSync(WORKDB)) fs.mkdirSync(WORKDB);
+
+  const WORKCSV = ENV.WORKCSV;       // base directory for .csv files
+  if (!fs.existsSync(WORKCSV)) fs.mkdirSync(WORKCSV);
 
   const WORKLEDGER = ENV.WORKLEDGER; // base directory for .ledger files
-  if (!fs.existsSync(WORKLEDGER)) { fs.mkdirSync(WORKLEDGER); }
+  if (!fs.existsSync(WORKLEDGER)) fs.mkdirSync(WORKLEDGER);
 
-  const WORKBAK = ENV.WORKBAK;    // base directory for storing deleted files
-  if (!fs.existsSync(WORKBAK)) { fs.mkdirSync(WORKBAK); }
+  const WORKBAK = ENV.WORKBAK;       // base directory for storing deleted files
+  if (!fs.existsSync(WORKBAK)) fs.mkdirSync(WORKBAK);
 
   const db_file = options.attach ? options.attach :    // use provided option for attaching
                   options.delete ? options.delete :    // use provided option for deletion
@@ -937,15 +959,6 @@ performance.
 
       process.exit(0);
   }
-
-  // year is needed for checks, so define it here
-  const [acct,year] = options.csv;
-  if (!year) {
-    console.error('ERROR: year is not defined.');
-    process.exit(1);
-  }
-  const wl_year = parseInt(year, 10);
-
 
   function format_paths (db_path) {
 
@@ -1120,7 +1133,7 @@ accomplished using the {{{option(--export)}}} option.
 To export the SQLite3 database data to CSV and Ledger files, use the
 {{{option(--export)}}} option:
 
-: --export [<csv-file>=workfin.csv] --csv <acct> <year>
+: --export ACCT YEAR [--attach DB]
 
 The csv filename is optional, with the default being the same as the db file
 (i.e., ~workfin~), with the extension ~.csv~, (i.e., ~workfin.csv~) in the
@@ -1140,29 +1153,27 @@ The child process runs the {{{command(sqlite3)}}} command, and connects the
 a given year and account are exported, the output will truncate the target CSV
 file upon opening it for writing.  The program will halt after the export.
 
-** Ledger ~convert~ Command
+*** Export Code
 
-#+cindex:@command{convert} command
-Upon an export of the SQLite3 data to a CSV file, the program will also send
-the exported data through the Ledger {{{command(convert)}}} command and into
-the ~workfin.ledger~ data file.[fn::Refer to the Ledger manual at Sec. 7.2.1.2
-for the {{{command(convert}}}} command.]  This file is located in the ~ledger/~
-directory below the ~workfin~ directory.
-
-#+cindex:directives, Ledger
-The {{{command(convert)}}} command uses a ~ledger~ file filled with ~ledger~
-=directives= to associate =payee= 's with =account= 's.  If this =directives=
-file does not exist, then it will be created.
-
-** Export Code
+#+caption:CSV-SQLite3 Export Option
 #+name:csv-sqlite3-export-option
-#+begin_src js +n :tangle index.js
+#+begin_src js -n :tangle lib/sql/export.js
+  /* lib/sql/export.js */
+
+  const { spawnSync } = require('child_process');
+  const fs      = require('fs');
+  const path    = require('path');
+  const ENV     = require('../../config/env');
+  const {WORKCSV,WORKLEDGER} = ENV.WORKCSV;
+  const DB_DATA = require('./db_data');
 
   /*--EXPORT--*/
-  if (options.hasOwnProperty('export')) {
-      const { spawnSync } = require('child_process');
-      const export_csv = options['export'] || db_file;
-      console.log(`exporting to ${export_csv}...`);
+  //if (options.hasOwnProperty('export')) {
+
+  module.exports.export = function (options) {
+
+      const db_file = options.attach; //full path, e.g. WORKDB/workfin.sqlite
+      const export_csv = path.basename(db_file, '.sqlite'); //e.g. workfin
 
       const export_csv_dir = WORKCSV;
       if (!fs.existsSync(export_csv_dir)) {
@@ -1175,15 +1186,10 @@ file does not exist, then it will be created.
           ext: '.csv'
       });
 
-      // --export must be accompanied by --csv <acct> <year> of the proper values
-      if (!options.hasOwnProperty('csv')) {
-          console.error('Export must be accompanied by a bank account (e.g., 6815), and a year (e.g., 2016)');
-          process.exit(1);
-      }
-      const _acct = options.csv[0],
-            _year = options.csv[1];
+      const [_acct, _year] = options.export;
 
-      if (!(Object.keys(DB_ACCTS).includes(_acct) && DB_YEARS.includes(_year))) {
+      if (!(Object.keys(DB_DATA.DB_ACCTS).includes(_acct) &&
+            DB_DATA.DB_YEARS.includes(_year))) {
           console.error(`Invalid values for acct: ${_acct} or year: ${_year}`);
           process.exit(1);
       }
@@ -1197,7 +1203,7 @@ file does not exist, then it will be created.
       console.log(`export_csv_path: ${export_csv_path}`);
 
       const sql = `
-  SELECT ${EXPORT_DB_COLS.join(',')}
+  SELECT ${DB_DATA.EXPORT_DB_COLS.join(',')}
   FROM   usb
   WHERE  acct = '${usb_acct}' and date like '${_year}%';`;
 
@@ -1242,9 +1248,7 @@ file does not exist, then it will be created.
           fs.mkdirSync(ledger_dir);
       }
 
-      //const l_file = fs.existsSync(ledger_path) ? ledger_path : zero_file;
       const l_file = zero_file;
-
       console.log(`converting: ${export_csv_path} to ledger_path: ${ledger_path}`);
 
       fd = fs.openSync(ledger_path, 'as');	// 'as' - Open file for appending in synchronous mode.
@@ -1276,6 +1280,20 @@ file does not exist, then it will be created.
       process.exit(0);
   }
 #+end_src
+
+** Ledger ~convert~ Command
+
+#+cindex:@command{convert} command
+Upon an export of the SQLite3 data to a CSV file, the program will also send
+the exported data through the Ledger {{{command(convert)}}} command and into
+the ~workfin.ledger~ data file.[fn::Refer to the Ledger manual at Sec. 7.2.1.2
+for the {{{command(convert}}}} command.]  This file is located in the ~ledger/~
+directory below the ~workfin~ directory.
+
+#+cindex:directives, Ledger
+The {{{command(convert)}}} command uses a ~ledger~ file filled with ~ledger~
+=directives= to associate =payee= 's with =account= 's.  If this =directives=
+file does not exist, then it will be created.
 
 ** The Zero Ledger File
 #+cindex:@command{convert} command
