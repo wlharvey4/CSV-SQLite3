@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 08:21>
-#+macro: version Version 0.0.78
+#+date:<2019-10-20 Sun 09:03>
+#+macro: version Version 0.0.79
 
 #+texinfo: @insertcopying
 
@@ -624,9 +624,7 @@ const cl_usage = require('command-line-usage');
 #+end_src
 
 ** Working with the Command Line
-:PROPERTIES:
-:header-args: :comments both
-:END:
+
 Here is implementation of command-line argument parsing and the generation of a
 usage message triggered by requesting the option =--help=.
 
@@ -736,23 +734,45 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
       }
   }
   console.log(`Log-level set at: ${LOG_LEVEL}`);
+
+  if (options.hasOwnProperty('csv')) { // process --csv ACCT YEAR
+      // const acct = options.csv[0],
+      //       year = options.csv[1];
+
+      /* send a source stream through the file parser */
+      const csv_source_stream = require('./lib/csv/source_stream');
+      const csv_file_stream   = csv_source_stream(options.csv);
+      const csv_file_parser   = require('./lib/csv/file_parser');
+
+      csv_file_stream.on('error', function(err) {
+          console.error(err.message);
+          process.exit(1);
+
+      }).on('end', function () {
+          console.log('Reader finished reading data.');
+
+      });
+
+      csv_file_stream.pipe(csv_file_parser); // down the rabbit hole
+  }
+
 #+end_src
 
 * Attach To or Delete a Database
-:PROPERTIES:
-:header-args: :comments both
-:END:
-SQLite3 can have any number of databases.  Only one is initially attached, but
-more can be attached subsequent to the first attachment.  If the database does
-not exist, it will be created.  If the user requests that a database file be
-deleted, it will be backed up first, then deleted.
 
-The user can attach to a database file (either a specified file or the default
-file, defined as ~$WORKFIN/db/workfin.sqlite~), or delete a specified database file
-and the associated CSV file exported from the database data.  All deleted files
-are backed up to a backup directory that needs to be defined as a shell
-environment variable: =WORKBAK=.  The backed-up files are appended with the
-current date in UNIX time (seconds).
+SQLite3 can work with any number of databases.  Only one is initially attached,
+but more can be attached subsequent to the first attachment.  When a database
+is first opened it will be created if it does not exist.  In this program, if
+the user requests that a database file be deleted, it will be deleted by
+sending it to a backup directory (identified by the environment variable
+=WORKBAK=) with the unix time stamp at the time of its deletion attached to the
+end of the filename.  This program also supplies a way to restore a backed-up
+database that was deleted.
+
+The user can =attach= to a database file (either a specified file or the
+default file, defined as ~$WORKFIN/db/workfin.sqlite~), or =delete= a specified
+database file and the associated CSV file exported from the database data.  All
+deleted files are backed up to a backup directory as specified above.
 
 #+cindex:@file{db} database file
 #+cindex:database file @file{db}
@@ -774,7 +794,7 @@ performance.
 
   const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
   const ENV = require('../../config/env.js');
-  const DATA = require('../');
+  /*const DATA = require('../db_data');*/
   const DB_DEFAULT = 'workfin';  // default sqlite db name
 
   const WORKDB = ENV.WORKDB;     // base directory for .sqlite db files
@@ -807,7 +827,7 @@ performance.
       });
       db.serialize();
       db.run(`CREATE TABLE IF NOT EXISTS
-      <<define-usb-table-schema>>`);
+      <<define-usb-table-data-schema>>`);
   }
 
   /*---DELETE--*/
@@ -1255,10 +1275,6 @@ file does not exist, then it will be created.
       fs.closeSync(fd);
       process.exit(0);
   }
-
-  /*--DON'T CONTINUE UNLESS --csv OPTION USED--*/
-  if (!options.hasOwnProperty('csv'))
-      process.exit(0);
 #+end_src
 
 ** The Zero Ledger File
@@ -1458,9 +1474,7 @@ outstanding invoices:
 #+end_src
 
 * Process CSV Files using the Node.js Package ~csv~
-:PROPERTIES:
-:header-args: :comments both
-:END:
+
 The Node.js package [[https://github.com/adaltas/node-csv][~node-csv~]] contains the following components (see
 https://csv.js.org):
 
@@ -1607,9 +1621,7 @@ the source files use two dashes; in all other respects, they are the same.
 #+end_src
 
 ** Set Up CSV-Transform and the Transform Function
-:PROPERTIES:
-:header-args: :comments both
-:END:
+
 This code implements the stream transformer functionality, which is at the
 heart of this project.
 
@@ -1877,9 +1889,7 @@ records, for example.
 #+end_src
 
 ** Set Up CSV-Parse
-:PROPERTIES:
-:header-args: :comments both
-:END:
+
 #+cindex:@code{write} method, transformer
 This section implements the csv parser.  By default, it does little other than
 read a large string of data and parse it into an array of records.  By giving
@@ -1995,28 +2005,11 @@ parser's ~write()~ method.
   }
   #+end_src
 
-  #+name:csv-sqlite3-process-csv-files
-  #+header: :noweb yes
-  #+begin_src js +n :tangle index.js
-    if (options.hasOwnProperty('csv')) {
-        // const acct = options.csv[0],
-        //       year = options.csv[1];
-
-        const csv_source_stream = require('./lib/csv/source_stream');
-        const csv_file_parser   = require('./lib/csv/file_parser');
-    
-        const csv_file_stream   = csv_source_stream(options.csv);
-        csv_file_stream.pipe(csv_file_parser); // down the rabbit hole
-
-        csv_file_stream.on('error', function(err) {
-            console.error(err.message);
-            process.exit(1);
-
-        }).on('end', function () {
-            console.log('Reader finished reading data.');
-
-        });
-      }
+#+caption:CSV-SQLite3 Process CSV Files
+#+name:csv-sqlite3-process-csv-files
+#+begin_src js +n :tangle index.js
+  if (options.hasOwnProperty('csv')) {
+    }
 #+end_src
 * Node-SQLite3 Module
 :PROPERTIES:
