@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 10:25>
-#+macro: version Version 0.0.80
+#+date:<2019-10-20 Sun 11:34>
+#+macro: version Version 0.0.81
 
 #+texinfo: @insertcopying
 
@@ -621,7 +621,6 @@ processes the commndline arguments and dispatches to the appropriate points,
 const cl_args  = require('command-line-args');
 const cl_usage = require('command-line-usage');
 const ENV = require('./config/env');
-const DB_DEFAULT = 'workfin';
 
 #+end_src
 
@@ -737,16 +736,13 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
   }
   console.log(`Log-level set at: ${LOG_LEVEL}`);
 
-  /* GET A DB FILE PATH */
-  if (!options.hasOwnProperty('attach')) {
-      options.attach = DB_DEFAULT;
+  /* ATTACH OR DELETE */
+  let db;
+  if (options.hasOwnProperty('attach') || options.hasOwnProperty'delete') {
+      const option = options.attach ? 'attach' : 'delete';
+      const value = options.attach ? options.attach : options.delete;
+      db = require('./lib/sql/db')[option](value);
   }
-  options.attach = path.format({
-      path: ENV.WORKDB,
-      name: options.attach,
-      ext: '.sqlite3'
-  });
-  console.log(`db file path is: ${options.attach}`);
 
   if (options.hasOwnProperty('csv')) { // process --csv ACCT YEAR
       // const acct = options.csv[0],
@@ -811,173 +807,184 @@ performance.
 #+header: :mkdirp yes
 #+header: :noweb yes
 #+begin_src js -n :tangle lib/sql/db.js
-  /* lib/sql/db */
+    /* lib/sql/db */
 
-  const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
-  const ENV = require('../../config/env');
-  /*const DATA = require('../db_data');*/
+    const ENV = require('../../config/env');
+    const DB_DEFAULT = 'workfin';      // default sqlite db name
 
-  const DB_DEFAULT = 'workfin';      // default sqlite db name
+    /*--ATTACH--*/
+    exports.attach = function (db_file) {
+        console.log('attaching...');
 
-  const WORKDB = ENV.WORKDB;         // base directory for .sqlite db files
-  if (!fs.existsSync(WORKDB)) fs.mkdirSync(WORKDB);
+        if (db_file === 'undefined') {
+            db_file = DB_DEFAULT;
+        }
 
-  const WORKCSV = ENV.WORKCSV;       // base directory for .csv files
-  if (!fs.existsSync(WORKCSV)) fs.mkdirSync(WORKCSV);
+        const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
+        /*const DATA = require('../db_data');*/
 
-  const WORKLEDGER = ENV.WORKLEDGER; // base directory for .ledger files
-  if (!fs.existsSync(WORKLEDGER)) fs.mkdirSync(WORKLEDGER);
+        const WORKDB = ENV.WORKDB;         // base directory for .sqlite db files
+        if (!fs.existsSync(WORKDB)) fs.mkdirSync(WORKDB);
 
-  const WORKBAK = ENV.WORKBAK;       // base directory for storing deleted files
-  if (!fs.existsSync(WORKBAK)) fs.mkdirSync(WORKBAK);
+        const WORKCSV = ENV.WORKCSV;       // base directory for .csv files
+        if (!fs.existsSync(WORKCSV)) fs.mkdirSync(WORKCSV);
 
-  const db_file = options.attach ? options.attach :    // use provided option for attaching
-                  options.delete ? options.delete :    // use provided option for deletion
-                  DB_DEFAULT;  	       	         // if no provided option, use the default name
+        const WORKLEDGER = ENV.WORKLEDGER; // base directory for .ledger files
+        if (!fs.existsSync(WORKLEDGER)) fs.mkdirSync(WORKLEDGER);
 
-  /*--ATTACH--*/
-  exports.attach = function (db_file) {
-      console.log('attaching...');
+        const ({db_path, csv_path}) = format_paths(db_file);
 
-      const ({db_path, csv_path}) = format_paths(db_file);
+        const db = new sqlite3.Database(db_path, err => {
+            if (err) {
+                return console.error(`Error opening database file ${db_path}: ${err.message})`);
+            }
+            console.log(`Successfully attached to database file ${db_path}`);
+        });
+        db.serialize();
+        db.run(`CREATE TABLE IF NOT EXISTS
+        <<define-usb-table-data-schema>>`);
 
-      const db = new sqlite3.Database(db_path, err => {
-          if (err) {
-              return console.error(`Error opening database file ${db_path}: ${err.message})`);
-          }
-          console.log(`Successfully attached to database file ${db_path}`);
-      });
-      db.serialize();
-      db.run(`CREATE TABLE IF NOT EXISTS
-      <<define-usb-table-data-schema>>`);
-  }
+        return db;
+    }
 
-  /*---DELETE--*/
-  exports.delete = function (db_file) {
+    /*---DELETE--*/
+    exports.delete = function (db_file) {
+        console.log('deleting...');
 
-      const WORKBAK_DB = path.format({
-          dir: WORKBAK,
-          name: 'db'
-      });
-      if (!fs.existsSync(WORKBAK_DB)) {
-          fs.mkdirSync(WORKBAK_DB, {recursive: true});
-      }
+        if (db_file === 'undefined') {
+            db_file = DB_DEFAULT;
+        }
 
-      const WORKBAK_CSV= path.format({
-          dir:   WORKBAK,
-          name: 'csv'
-      });
-      if (!fs.existsSync(WORKBAK_CSV)) {
-          fs.mkdirSync(WORKBAK_CSV, {recursive: true});
-      }
+        const WORKBAK = ENV.WORKBAK;       // base directory for storing deleted files
+        if (!fs.existsSync(WORKBAK)) fs.mkdirSync(WORKBAK);
 
-      const WORKBAK_LEDGER = path.format({
-          dir:   WORKBAK,
-          name: 'ledger'
-      });
-      if (!fs.existsSync(WORKBAK_LEDGER)) {
-          fs.mkdirSync(WORKBAK_LEDGER, {recursive: true});
-      }
+        const WORKBAK_DB = path.format({
+            dir: WORKBAK,
+            name: 'db'
+        });
+        if (!fs.existsSync(WORKBAK_DB)) {
+            fs.mkdirSync(WORKBAK_DB, {recursive: true});
+        }
 
-      // Backup workfin.sqlite, workfin.csv
-      const db_path_bak = path.format({
-          dir: WORKBAK_DB,
-          name: db_file,
-          ext: `.sqlite.${Date.now()}`
-      });
+        const WORKCSV = ENV.WORKCSV;       // base directory for .csv files
+        if (!fs.existsSync(WORKCSV)) fs.mkdirSync(WORKCSV);
 
-      const csv_path_bak = path.format({
-          dir: WORKBAK_CSV,
-          name: db_file,
-          ext: `.csv.${Date.now()}`
-      });
+        const WORKBAK_CSV= path.format({
+            dir:   WORKBAK,
+            name: 'csv'
+        });
+        if (!fs.existsSync(WORKBAK_CSV)) {
+            fs.mkdirSync(WORKBAK_CSV, {recursive: true});
+        }
 
-      try {
-          fs.renameSync(db_path, db_path_bak);
-          console.error(`Renamed ${db_path} to ${db_path_bak}`);
-          fs.renameSync(csv_path, csv_path_bak);
-          console.error(`Renamed ${csv_path} to ${csv_path_bak}`);
-      } catch (err) {
-          if (err.code === 'ENOENT')
-              console.log(`file ${db_path} and/or ${csv_path} did not exist; ignoring.`);
-          else {
-              throw err;
-          }
-      }
+        const WORKBAK_LEDGER = path.format({ // base directory for .ledger files
+            dir:   WORKBAK,
+            name: 'ledger'
+        });
+        if (!fs.existsSync(WORKBAK_LEDGER)) {
+            fs.mkdirSync(WORKBAK_LEDGER, {recursive: true});
+        }
 
-      // Backup all .csv files
-      try {
-          const files = fs.readdirSync(WORKCSV);
-          files.forEach(file => {
-              const db_csv_path_file = path.format({
-                  dir: WORKCSV,
-                  name: file
-              });
-              const db_csv_path_bak  = path.format({
-                  dir: WORKBAK_CSV,
-                  name: file,
-                  ext: `.${Date.now()}`
-              });
-              fs.renameSync(db_csv_path_file, db_csv_path_bak);
-              console.log(`Renamed ${db_csv_path_file} to ${db_csv_path_bak}`);
-          });
+        // Backup workfin.sqlite, workfin.csv
+        const db_path_bak = path.format({
+            dir: WORKBAK_DB,
+            name: db_file,
+            ext: `.sqlite.${Date.now()}`
+        });
 
-      } catch (err) {
-          if (err.code === 'ENOENT') {
-              console.log(`${db_csv_path} probably does not exist`);
-          } else {
-              throw err;
-          }
-      }
+        const csv_path_bak = path.format({
+            dir: WORKBAK_CSV,
+            name: db_file,
+            ext: `.csv.${Date.now()}`
+        });
 
-      /* Ledger */
-      try {
-          const files = fs.readdirSync(WORKLEDGER);
-          files.forEach(file => {
-              if (!/zero/.test(file)) { // don't backup the zero ledger file
-                  const ledger_file = path.format({
-                      dir: WORKLEDGER,
-                      name: file
-                  });
-                  const ledger_file_bak = path.format({
-                      dir: WORKBAK_LEDGER,
-                      name: file,
-                      ext: `.${Date.now()}`
-                  });
-                  fs.renameSync(ledger_file, ledger_file_bak);
-                  console.log(`Renamed ${ledger_file} to ${ledger_file_bak}`);
-              }
-          });
+        const ({db_path}) = format_paths(db_file);
 
-      } catch (err) {
-          if (err.code === 'ENOENT') {
-              console.log(`${ledger_path} probably does not exist`);
-          } else {
-              throw err;
-          }
-      }
+        try {
+            fs.renameSync(db_path, db_path_bak);
+            console.error(`Renamed ${db_path} to ${db_path_bak}`);
+            fs.renameSync(csv_path, csv_path_bak);
+            console.error(`Renamed ${csv_path} to ${csv_path_bak}`);
+        } catch (err) {
+            if (err.code === 'ENOENT')
+                console.log(`file ${db_path} and/or ${csv_path} did not exist; ignoring.`);
+            else {
+                throw err;
+            }
+        }
 
-      process.exit(0);
-  }
+        // Backup all .csv files
+        try {
+            const files = fs.readdirSync(WORKCSV);
+            files.forEach(file => {
+                const db_csv_path_file = path.format({
+                    dir: WORKCSV,
+                    name: file
+                });
+                const db_csv_path_bak  = path.format({
+                    dir: WORKBAK_CSV,
+                    name: file,
+                    ext: `.${Date.now()}`
+                });
+                fs.renameSync(db_csv_path_file, db_csv_path_bak);
+                console.log(`Renamed ${db_csv_path_file} to ${db_csv_path_bak}`);
+            });
 
-  function format_paths (db_path) {
+        } catch (err) {
+            if (err.code === 'ENOENT') {
+                console.log(`${db_csv_path} probably does not exist`);
+            } else {
+                throw err;
+            }
+        }
 
-      const db_path = path.format({
-          dir: WORKDB,
-          name: db_file,
-          ext: '.sqlite'
-      });
-      console.log(`db_path: ${db_path}`);
+        /* Ledger */
+        try {
+            const files = fs.readdirSync(WORKLEDGER);
+            files.forEach(file => {
+                if (!/zero/.test(file)) { // don't backup the zero ledger file
+                    const ledger_file = path.format({
+                        dir: WORKLEDGER,
+                        name: file
+                    });
+                    const ledger_file_bak = path.format({
+                        dir: WORKBAK_LEDGER,
+                        name: file,
+                        ext: `.${Date.now()}`
+                    });
+                    fs.renameSync(ledger_file, ledger_file_bak);
+                    console.log(`Renamed ${ledger_file} to ${ledger_file_bak}`);
+                }
+            });
 
-      const csv_path = path.format({
-          dir: WORKCSV,
-          name: db_file,
-          ext: '.csv'
-      });
-      console.log(`csv_path: ${csv_path}`);
+        } catch (err) {
+            if (err.code === 'ENOENT') {
+                console.log(`${ledger_path} probably does not exist`);
+            } else {
+                throw err;
+            }
+        }
+        process.exit(0);
+    }
 
-      return ({db_path, csv_path});
-  }
+    function format_paths (db_file) {
+
+        const db_path = path.format({
+            dir: WORKDB,
+            name: db_file,
+            ext: '.sqlite'
+        });
+        console.log(`db_path: ${db_path}`);
+
+        const csv_path = path.format({
+            dir: WORKCSV,
+            name: db_file,
+            ext: '.csv'
+        });
+        console.log(`csv_path: ${csv_path}`);
+
+        return ({db_path, csv_path});
+    }
 #+end_src
 
 * Find and Store Checks
@@ -1579,17 +1586,16 @@ the source files use two dashes; in all other respects, they are the same.
 #+begin_src js -n :tangle lib/csv/file_stringifier.js
   /* csv/file_stringifier */
 
+  const fs   = require('fs');
+  const path = require('path');
+  const {DB_COLS} = require('../sql/definitions');
+
+  const file_stringifier = require('csv').stringify({
+      header: true,
+      columns: DB_COLS,
+  });
+
   module.exports = function([acct, year]) {
-
-      const path = require('path');
-
-      const {DB_COLS} = require('../sql/definitions');
-
-      const file_stringifier = require('csv').stringify({
-          header: true,
-          columns: DB_COLS,
-      });
-
       const usb_acct      = `usb_${acct}`;
       const usb_acct_year = path.format({
           name: `${usb_acct}__${year}`
@@ -1853,7 +1859,7 @@ records, for example.
   const stringifier   = require('./lib/csv/file_stringifier')(options.csv);
   const transform_fn  = require('./lib/csv/transform_function');
   exports.transformer = require('csv').transform(transform_fn);
-  const db      = require('./lib//sql/db');
+  const db      = require('./lib/sql/db');
   const db_data = require('./lib/sql/definitions');
 
   /* TRANSFORMER reads records through its TRANSFORM_FUNCTION */
@@ -1882,7 +1888,7 @@ records, for example.
           console.log(`sql: ${ sql }`);
           console.log(`col_values: ${ col_values }`);
 
-          db.run(sql, col_values, (err) => {
+          db.run(sql, col_values, (err) => { /* WRONG DB */
              if (err) {
                  console.error(err.message);
                  console.error(`ERROR sql: ${ sql }`);
@@ -2023,12 +2029,6 @@ parser's ~write()~ method.
   }
   #+end_src
 
-#+caption:CSV-SQLite3 Process CSV Files
-#+name:csv-sqlite3-process-csv-files
-#+begin_src js +n :tangle index.js
-  if (options.hasOwnProperty('csv')) {
-    }
-#+end_src
 * Node-SQLite3 Module
 :PROPERTIES:
 :appendix: true
