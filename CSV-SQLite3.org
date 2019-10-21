@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 22:36>
-#+macro: version Version 0.0.89
+#+date:<2019-10-21 Mon 12:40>
+#+macro: version Version 0.0.90
 
 #+texinfo: @insertcopying
 
@@ -731,7 +731,7 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
 #+header: :noweb yes
 #+begin_src js +n :tangle index.js
   const options = cl_args(option_defs);
-  console.log(options);
+  console.log('options:\n', options);
 
   if (options.help) {
       console.log(cl_usage(usage));
@@ -759,10 +759,7 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
   }
 
   if ( options.hasOwnProperty('csv') ) { // process --csv ACCT YEAR
-      // options.csv[0] == acct
-      // options.csv[1] == year
-
-      console.log('Entered --csv');
+      // [acct,year] = options.csv
 
       /* send a source stream through the file parser */
       const csv_file_stream   = require('./lib/csv/source_stream')(options.csv);
@@ -846,7 +843,9 @@ performance.
   exports.attach = function (db_file) {
 
       const {db_file_base, db_path} = format_paths(db_file);
+      console.log(db_file);
       console.log(`Attaching db_file: ${db_file_base}`);
+      console.log(`db_path is ${db_path}`);
 
       const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
 
@@ -856,10 +855,12 @@ performance.
           }
           console.log(`Successfully attached to database file ${db_path}`);
       });
-    
+
       db.serialize();
       db.run(`CREATE TABLE IF NOT EXISTS
-      <<define-usb-table-data-schema>>`);
+      <<define-usb-table-data-schema>>`,
+             null,
+             err => console.error(err.message));
 
       return db;
   }
@@ -982,7 +983,13 @@ performance.
           }
       }
   }
+#+end_src
 
+** DB Format_Paths Function
+
+#+name:db_format_paths
+#+header: :mkdirp yes
+#+begin_src js +n :tangle lib/sql/db.js
   function format_paths (db_file) {
 
       if (db_file === null) {
@@ -1122,20 +1129,16 @@ parser's ~write()~ method.
 #+begin_src js -n :tangle lib/csv/source_stream.js
     /* csv/source_stream */
 
-  console.log('Entered source_stream.js');
-
   const fs   = require('fs');
   const path = require('path');
   const {WORKUSB} = require('../../config/env');
 
-  module.exports = function(csv_info) { // csv_info = options.csv = [acct, year]
-
-      console.log('With csv_info: ', csv_info);
+  module.exports = function(options_csv) { // [acct, year] = options_csv
 
       let csv_stream;
       try {
           csv_stream = fs.createReadStream(
-              validate_data(csv_info),
+              validate_data(options_csv),
               {encoding: 'utf8'}
           );
 
@@ -1263,160 +1266,165 @@ records, for example.
 #+name:stream-transform-function
 #+header: :mkdirp yes
 #+begin_src js -n :tangle lib/csv/transform_function.js
-  module.exports = function (record) {
-      const DEBIT   = 'debit';
-      const CREDIT  = 'credit';
-      const CHECK   = 'check';
-      const CASH    = 'cash';
-      const DEPOSIT = 'deposit';
-      const UNKNOWN = 'unknown';
-      const TRANS   = 'transfer';
-      const USBANK  = 'usbank';
-      let   trfrom  = '';
+  const accounting = require('accounting');
 
-      // Add new columns: acct, checkno, txfr, caseno, desc1, desc2, category
-      record.acct    = acct;
-      record.checkno = null; // check no.
-      record.txfr    = null; // direction and acct #
-      record.caseno  = null; // related case foreign key
-      record.desc1   = null; // noun
-      record.desc2   = null; // adjective
-      record.category= null; // categorization of the transaction
+  module.exports = function (acct) {
 
-      // Format date as yyyy-mm-dd; delete original Date
-      record.date = new Date(record['Date']).toISOString().split('T')[0];
-      delete record['Date'];
+      return function (record) {
+          const DEBIT   = 'debit';
+          const CREDIT  = 'credit';
+          const CHECK   = 'check';
+          const CASH    = 'cash';
+          const DEPOSIT = 'deposit';
+          const UNKNOWN = 'unknown';
+          const TRANS   = 'transfer';
+          const USBANK  = 'usbank';
+          let   trfrom  = '';
 
-      // Change Transaction to trans; delete original Transaction
-      record.trans = record['Transaction'].toLowerCase();
-      delete record['Transaction'];
+          // Add new columns: acct, checkno, txfr, caseno, desc1, desc2, category
+          record.acct    = acct;
+          record.checkno = null; // check no.
+          record.txfr    = null; // direction and acct #
+          record.caseno  = null; // related case foreign key
+          record.desc1   = null; // noun
+          record.desc2   = null; // adjective
+          record.category= null; // categorization of the transaction
 
-      // Change Amount to amount as Currency type; delete original Amount
-      record.amount = accounting.formatMoney(record['Amount']);
-      delete record['Amount'];
+          // Format date as yyyy-mm-dd; delete original Date
+          record.date = new Date(record['Date']).toISOString().split('T')[0];
+          delete record['Date'];
 
-      // Change Name to payee; keep original Name as OrigName; delete Name
-      record.payee = record['Name'].toLowerCase().trimRight();
-      record.OrigPayee = record['Name'];
-      delete record['Name'];
+          // Change Transaction to trans; delete original Transaction
+          record.trans = record['Transaction'].toLowerCase();
+          delete record['Transaction'];
 
-      // Clean up Memo by removing Download message; return as note; keep Memo as OrigMemo
-      let re = new RegExp('Download from usbank.com.\\s*');
-      record.note = record['Memo'].replace(re,'').toLowerCase();
-      record.OrigMemo = record['Memo'];
-      delete record['Memo'];
+          // Change Amount to amount as Currency type; delete original Amount
+          record.amount = accounting.formatMoney(record['Amount']);
+          delete record['Amount'];
 
-      // Add check no. to checkno column
-      if (record.payee === CHECK) {
-          const checkno = record.trans.replace(/^0*/,'');
-          record.checkno  = checkno;
-          record.trans   = DEBIT;
-          record.payee  = `(${record.checkno}) check`;
-          record.note  += `Purchase by check no. ${checkno}`;
-          record.desc1  = 'purchase';
-          record.desc2  = 'check';
-      }
+          // Change Name to payee; keep original Name as OrigName; delete Name
+          record.payee = record['Name'].toLowerCase().trimRight();
+          record.OrigPayee = record['Name'];
+          delete record['Name'];
 
-      if (record.payee.match(/(returned) (item)/)) {
-          record.desc1 = RegExp.$2;
-          record.desc2 = RegExp.$1;
-          record.payee = USBANK;
-          record.note = `${record.desc2} ${record.desc1}`;
-      }
+          // Clean up Memo by removing Download message; return as note; keep Memo as OrigMemo
+          let re = new RegExp('Download from usbank.com.\\s*');
+          record.note = record['Memo'].replace(re,'').toLowerCase();
+          record.OrigMemo = record['Memo'];
+          delete record['Memo'];
 
-      if (record.payee.match(/(internet|mobile) (banking) transfer (deposit|withdrawal) (\d{4})\s*$/)) {
-          record.desc1 = RegExp.$3;
-          record.desc2 = RegExp.$1;
-          record.txfr = `${(RegExp.$3 === 'deposit') ? '<' : '>'} usb_${RegExp.$4}`;
-          tofrom = (record.trans === 'debit') ? 'to' : 'from';
-          record.payee = (record.trans === 'debit') ? `usb_${RegExp.$4}` : `usb_${options.csv[0]}`;
-          record.note = `${record.desc2} ${record.desc1}: ${TRANS} ${tofrom} ${record.note}`;
-          if (/>/.test(record.txfr)) {
-              record.payee = `Transfer to ${record.payee} from ${record.acct}`;
-          } else {
-              record.payee = `Transfer to ${record.payee} from usb_${RegExp.$4}`;
+          // Add check no. to checkno column
+          if (record.payee === CHECK) {
+              const checkno = record.trans.replace(/^0*/,'');
+              record.checkno  = checkno;
+              record.trans   = DEBIT;
+              record.payee  = `(${record.checkno}) check`;
+              record.note  += `Purchase by check no. ${checkno}`;
+              record.desc1  = 'purchase';
+              record.desc2  = 'check';
           }
-      }
 
-      if (record.payee.match(/debit (purchase)\s*-?\s*(visa)? /)) {
-          record.desc1 = RegExp.$1;
-          record.desc2 = RegExp.$2;
-          record.payee = record.payee.replace(RegExp.lastMatch,'');
-          record.note = `${record.desc2} ${record.desc1} ${record.note}`.trimLeft();;
-      }
+          if (record.payee.match(/(returned) (item)/)) {
+              record.desc1 = RegExp.$2;
+              record.desc2 = RegExp.$1;
+              record.payee = USBANK;
+              record.note = `${record.desc2} ${record.desc1}`;
+          }
 
-      // Removed ELECTRONIC WITHDRAWAL for payment to State Bar of CA
-      if (record.payee.match(/^.*(state bar of ca)/)) {
-          record.payee = RegExp.$1;
-      }
+          if (record.payee.match(/(internet|mobile) (banking) transfer (deposit|withdrawal) (\d{4})\s*$/)) {
+              record.desc1 = RegExp.$3;
+              record.desc2 = RegExp.$1;
+              record.txfr = `${(RegExp.$3 === 'deposit') ? '<' : '>'} usb_${RegExp.$4}`;
+              tofrom = (record.trans === 'debit') ? 'to' : 'from';
+              record.payee = (record.trans === 'debit') ? `usb_${RegExp.$4}` : `usb_${acct}`;
+              record.note = `${record.desc2} ${record.desc1}: ${TRANS} ${tofrom} ${record.note}`;
+              if (/>/.test(record.txfr)) {
+                  record.payee = `Transfer to ${record.payee} from ${record.acct}`;
+              } else {
+                  record.payee = `Transfer to ${record.payee} from usb_${RegExp.$4}`;
+              }
+          }
 
-      // web authorized payment
-      // atm|electronic|mobile check|rdc deposit|withdrawal <name>
-      if (record.payee.match(/(web authorized) (pmt) |(atm|electronic|mobile)?\s*(check|rdc)?\s*(deposit|withdrawal)\s*(.*)?/)) {
-          tofrom = '';
-          record.desc1 = RegExp.$2 ? RegExp.$2 : RegExp.$4 ? RegExp.$4 : RegExp.$5 ? RegExp.$5 : 'undefined';
-          record.desc2 = RegExp.$1 ? RegExp.$1 : RegExp.$3 ? RegExp.$3 : 'undefined';
-          if (RegExp.$3 === 'atm' || RegExp.$3 === 'electronic' || RegExp.$3 === 'mobile' || RegExp.$5 === DEPOSIT) {
-              record.payee = (RegExp.$5 === 'deposit') ? `usb_${options.csv[0]}` : CASH;
-          } else {
+          if (record.payee.match(/debit (purchase)\s*-?\s*(visa)? /)) {
+              record.desc1 = RegExp.$1;
+              record.desc2 = RegExp.$2;
               record.payee = record.payee.replace(RegExp.lastMatch,'');
+              record.note = `${record.desc2} ${record.desc1} ${record.note}`.trimLeft();;
           }
-          if (record.note.match(/paypal/) && record.trans === CREDIT) {
-              record.txfr = `< ${RegExp.lastMatch}`;
-              tofrom = ' from';
+
+          // Removed ELECTRONIC WITHDRAWAL for payment to State Bar of CA
+          if (record.payee.match(/^.*(state bar of ca)/)) {
+              record.payee = RegExp.$1;
           }
-          record.note = `${record.desc2} ${record.desc1}${tofrom} ${record.note}`.trimRight();
+
+          // web authorized payment
+          // atm|electronic|mobile check|rdc deposit|withdrawal <name>
+          if (record.payee.match(/(web authorized) (pmt) |(atm|electronic|mobile)?\s*(check|rdc)?\s*(deposit|withdrawal)\s*(.*)?/)) {
+              tofrom = '';
+              record.desc1 = RegExp.$2 ? RegExp.$2 : RegExp.$4 ? RegExp.$4 : RegExp.$5 ? RegExp.$5 : 'undefined';
+              record.desc2 = RegExp.$1 ? RegExp.$1 : RegExp.$3 ? RegExp.$3 : 'undefined';
+              if (RegExp.$3 === 'atm' || RegExp.$3 === 'electronic' || RegExp.$3 === 'mobile' || RegExp.$5 === DEPOSIT) {
+                  record.payee = (RegExp.$5 === 'deposit') ? `usb_${acct}` : CASH;
+              } else {
+                  record.payee = record.payee.replace(RegExp.lastMatch,'');
+              }
+              if (record.note.match(/paypal/) && record.trans === CREDIT) {
+                  record.txfr = `< ${RegExp.lastMatch}`;
+                  tofrom = ' from';
+              }
+              record.note = `${record.desc2} ${record.desc1}${tofrom} ${record.note}`.trimRight();
+          }
+
+          if (record.payee.match(/(zelle instant) (pmt) (from (\w+\s\w+))\s(.*)$/)) {
+              record.desc1 = RegExp.$2;
+              record.desc2 = RegExp.$1;
+              record.note = `${record.desc2} ${record.desc1} ${RegExp.$3}`;
+              record.payee = `usb_${acct}`;
+          }
+
+          if (record.payee.match(/(overdraft|international) (paid|processing) (fee)/)) {
+              record.desc1 = RegExp.$3;
+              record.desc2 = `${RegExp.$1} ${RegExp.$2}`;
+              record.payee = USBANK;
+              record.note  = `${record.desc2} ${record.desc1} to ${record.payee}`;
+          }
+
+          record.payee = record.payee.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
+          record.note  = record.note.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
+          record.payee = record.payee.replace(/\s\d{3}\w+\s{2,}or$/,''); // Nike Company 019Beaverton   OR
+          record.note  = record.note.replace(/\s\d{3}\w+\s{2,}or$/,'');
+          record.payee = record.payee.replace(/\s*[-\d]{5,}\s*\w{2}$/,''); // '650-4724100 CA' & '        855-576-4493WA' & '  800-3333330 MA'
+          record.note  = record.note.replace(/\s*[-\d]{5,}\s*\w{2}$/,'');
+          record.payee = record.payee.replace(/(\s\w*https)?www.*$/,''); // WWW.ATT.COM TX; UDEMY ONLINE COUHTTPSWWW.UDECA
+          record.note  = record.note.replace(/(\s\w*https)?www.*$/,'');
+          record.payee = record.payee.replace(/\s*\w+\.com\s+\w{2}$/, '');
+          record.note  = record.note.replace( /\s*\w+\.com\s+\w{2}$/, '');
+          record.payee = record.payee.replace(/aws.amazon.cWA/i,''); // serviaws.amazon.cWA
+          record.note  = record.note.replace(/aws.amazon.cWA/i,'');
+          if (record.payee.match(/(bostype \/ wes bo)(hamilton\s+on)/)) { // WES BOHAMILTON    ON
+              record.payee = 'Wes Bos';
+              record.note  = record.note.replace(RegExp.$1,'Wes Bos');
+              record.note  = record.note.replace(RegExp.$2, '');
+          }
+          record.payee = record.payee.replace(/\s{2,}/g,' ');
+          record.note  = record.note.replace(/\s{2,}/g,' ');
+
+          /*
+            'DEBIT PURCHASE -VISA SQ *PHIL        877-417-4551WA'
+
+            You paid Phil $159 for Atreus keyboard kit and shipping
+
+            It is for a credit card processor that goes by the brand name
+            Square Up. Merchants can run credit card transactions through
+            their iPhone or iPads using the Square Up services. Mine was for
+            a taxi ride. https://800notes.com/Phone.aspx/1-877-417-4551
+          ,*/
+
+          record.payee = record.payee.replace(/sq/, 'square');
+          record.note  = record.note.replace(/sq/, 'square');
+
+          return record;
       }
-
-      if (record.payee.match(/(zelle instant) (pmt) (from (\w+\s\w+))\s(.*)$/)) {
-          record.desc1 = RegExp.$2;
-          record.desc2 = RegExp.$1;
-          record.note = `${record.desc2} ${record.desc1} ${RegExp.$3}`;
-          record.payee = `usb_${options.csv[0]}`;
-      }
-
-      if (record.payee.match(/(overdraft|international) (paid|processing) (fee)/)) {
-          record.desc1 = RegExp.$3;
-          record.desc2 = `${RegExp.$1} ${RegExp.$2}`;
-          record.payee = USBANK;
-          record.note  = `${record.desc2} ${record.desc1} to ${record.payee}`;
-      }
-
-      record.payee = record.payee.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
-      record.note  = record.note.replace(/\s*portland\s{2,}or$|\s*vancouver\s{2,}wa.*$/,'');
-      record.payee = record.payee.replace(/\s\d{3}\w+\s{2,}or$/,''); // Nike Company 019Beaverton   OR
-      record.note  = record.note.replace(/\s\d{3}\w+\s{2,}or$/,'');
-      record.payee = record.payee.replace(/\s*[-\d]{5,}\s*\w{2}$/,''); // '650-4724100 CA' & '        855-576-4493WA' & '  800-3333330 MA'
-      record.note  = record.note.replace(/\s*[-\d]{5,}\s*\w{2}$/,'');
-      record.payee = record.payee.replace(/(\s\w*https)?www.*$/,''); // WWW.ATT.COM TX; UDEMY ONLINE COUHTTPSWWW.UDECA
-      record.note  = record.note.replace(/(\s\w*https)?www.*$/,'');
-      record.payee = record.payee.replace(/\s*\w+\.com\s+\w{2}$/, '');
-      record.note  = record.note.replace( /\s*\w+\.com\s+\w{2}$/, '');
-      record.payee = record.payee.replace(/aws.amazon.cWA/i,''); // serviaws.amazon.cWA
-      record.note  = record.note.replace(/aws.amazon.cWA/i,'');
-      if (record.payee.match(/(bostype \/ wes bo)(hamilton\s+on)/)) { // WES BOHAMILTON    ON
-          record.payee = 'Wes Bos';
-          record.note  = record.note.replace(RegExp.$1,'Wes Bos');
-          record.note  = record.note.replace(RegExp.$2, '');
-      }
-      record.payee = record.payee.replace(/\s{2,}/g,' ');
-      record.note  = record.note.replace(/\s{2,}/g,' ');
-
-      /*
-        'DEBIT PURCHASE -VISA SQ *PHIL        877-417-4551WA'
-
-        You paid Phil $159 for Atreus keyboard kit and shipping
-
-        It is for a credit card processor that goes by the brand name
-        Square Up. Merchants can run credit card transactions through
-        their iPhone or iPads using the Square Up services. Mine was for
-        a taxi ride. https://800notes.com/Phone.aspx/1-877-417-4551
-      ,*/
-
-      record.payee = record.payee.replace(/sq/, 'square');
-      record.note  = record.note.replace(/sq/, 'square');
-
-      return record;
   }
 #+end_src
 
@@ -1431,12 +1439,12 @@ records, for example.
 #+begin_src js -n :tangle lib/csv/file_transformer.js
   /* csv/file_transformer */
 
-  console.log('Entered file_transformer');
-
-  const transform_fn = require('./transform_function');
-  const transformer  = require('csv').transform(transform_fn);
+  const transform  = require('csv').transform;
+  const util = require('util');
 
   module.exports = function (options) {
+      const transform_fn = require('./transform_function')(options.csv[0]);
+      const transformer  = transform(transform_fn);
 
       const stringifier   = require('./file_stringifier')(options.csv);
       const db            = require('../sql/db').attach(options.attach);
@@ -1464,9 +1472,6 @@ records, for example.
 
               let sql = `INSERT INTO ${ tab_name }( ${ col_names } )
                      VALUES ( ${ col_phs } )`;
-
-              console.log(`sql: ${ sql }`);
-              console.log(`col_values: ${ col_values }`);
 
               db.run(sql, col_values, (err) => { /* WRONG DB */
                   if (err) {
@@ -1507,8 +1512,6 @@ the source files use two dashes; in all other respects, they are the same.
 #+header: :mkdirp yes
 #+begin_src js -n :tangle lib/csv/file_stringifier.js
   /* csv/file_stringifier */
-
-  console.log('Entered file_stringifier.js');
 
   const fs   = require('fs');
   const path = require('path');
@@ -1552,7 +1555,6 @@ the source files use two dashes; in all other respects, they are the same.
           console.log('file_stringifier is now readable');
           let row;
           while (row = this.read()) {
-              console.log(`stringifer row: ${row}`);
               csv_file_stream.write(row);
           }
 
