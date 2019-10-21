@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 11:34>
-#+macro: version Version 0.0.81
+#+date:<2019-10-20 Sun 17:45>
+#+macro: version Version 0.0.82
 
 #+texinfo: @insertcopying
 
@@ -519,27 +519,7 @@ installing a ~package.json~ file, identifying and importing dependency
 packages, and creating an entry point for the project's use, an ~index.js~
 file.
 
-** Extract all of the Modules
-
-The following code runs first to extract (``tangle'') all file modules into
-their respective directories.  This command runs automatically upon this source
-file being woven into documentation using Org's =export= facilities.  This
-command can be run independently from within the Org source file using the key
-command =C-c C-v t=, or from the command line using the Make target =make
-tangle=.
-
-Note that in order for it to run automatically and without user confirmation,
-the Org variable =org-confirm-babel-evaluate= must be set to =nil=, either
-through the customization feature, in an =init= file, or as a local variable in
-this buffer.
-
-#+caption:Org Babel command to extract (``tangle'') all modules
-#+name:tangle-CSV-SQLite3-project
-#+begin_src emacs-lisp :results output :exports both
-(org-babel-tangle-file "CSV-SQLite3.org")
-#+end_src
-
-** Usage
+** Usage Information
 
 : node csv-sqlite3 --csv ACCT YEAR  [--attach [DB]]
 
@@ -561,6 +541,26 @@ saves it as a separate Ledger file.  The name of the database to export from is
 assumed to be the default unless the {{{option(--attach)}}} option is given
 with a different name.
 
+** Extract the Modules
+
+The following code runs first to extract (``tangle'') all file modules into
+their respective directories.  This command runs automatically upon this source
+file being woven into documentation using Org's =export= facilities.  This
+command can be run independently from within the Org source file using the key
+command =C-c C-v t=, or from the command line using the Make target =make
+tangle=.
+
+Note that in order for it to run automatically and without user confirmation,
+the Org variable =org-confirm-babel-evaluate= must be set to =nil=, either
+through the customization feature, in an =init= file, or as a local variable in
+this buffer.
+
+#+caption:Org Babel command to extract (``tangle'') all modules
+#+name:tangle-CSV-SQLite3-project
+#+begin_src emacs-lisp :results output :exports both
+(org-babel-tangle-file "CSV-SQLite3.org")
+#+end_src
+
 ** Helper Scripts
 
 Two helper scripts are also created by this source file:
@@ -580,7 +580,7 @@ Two helper scripts are also created by this source file:
 
                    : find-checks YEAR
 
-** Install Package.json and Dependencies
+** Install Package.json and the Package's Dependencies
 
 The package's ~package.json~ file is created using Yarn, which is also used to
 install external dependencies.
@@ -626,8 +626,9 @@ const ENV = require('./config/env');
 
 ** Working with the Command Line
 
-Here is implementation of command-line argument parsing and the generation of a
-usage message triggered by requesting the option =--help=.
+The Node.js command-line programs ~command-line-args~ and ~command-line-usage~
+parse the arguments and dispatch to the appropriate modules and provide usage
+information.
 
 *** Command Line Usage
 #+cindex:command-line usage
@@ -635,25 +636,47 @@ usage message triggered by requesting the option =--help=.
 #+cindex:@command{command-line-usage}
 #+cindex:@code{cl_usage()}
 This section generates a usage message activated by the =--help= option.  It
-uses the [[option-defs-variable][~options_defs~]] object created in the code in the next section.
+uses the [[option-defs-variable][~option_defs~]] object.
 
+{{{heading(Options.defs)}}}
+
+<<option-defs-variable>>
+#+caption:The Option Defs object
+#+name:option-defs-object
+#+begin_src js +n :tangle index.js
+  const option_defs = [
+      { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
+      { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
+      { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file and related CSV files.' },
+      { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
+      { name: 'export', alias: 'e', type: String,  description: 'Export identified sqlite3 data into a csv file', multiple: true },
+      { name: 'checks',             type: Boolean, description: 'Find checks in worklog.<year>.otl and save to sqlite3 database checks file.' },
+      { name: 'log-level', alias: 'l', type: Number, description: 'Set a log level 0..10' },
+  ];
+
+  const usage = [
+      {
+          header: 'CSV-SQLite3',
+          content: 'Processes raw usb csv files into a form usable by SQLite3'
+      },
+      {
+          header: 'Options',
+          optionList: option_defs,
+      },
+      {
+          content: `Project directory: {underline ${process.env.WORKNODE}/CSV-SQLite3}`
+      }
+  ];
+
+#+end_src
+
+{{{heading(Usage)}}}
+
+#+caption:Command-Line-Usage Module
 #+name:csv-sqlite3-usage
 #+begin_src js
-const sections = [
-    {
-        header: 'CSV-SQLite3',
-        content: 'Processes raw usb csv files into a form usable by SQLite3'
-    },
-    {
-        header: 'Options',
-        optionList: option_defs,
-    },
-    {
-        content: `Project directory: {underline ${process.env.WORKNODE}/CSV-SQLite3}`
-    }
-];
-const usage = cl_usage(sections);
-console.log(usage);
+const sections = ;
+console.log(cl_usage(sections));
 #+end_src
 
 *** Command Line Argument Processing
@@ -705,24 +728,16 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
 
 : csv-sqlite3 --log-level <value:0..10> | -l <value:0..10>
 
-<<option-defs-variable>>
+*** Main ~index.js~ Implementation
+
 #+name:csv-sqlite3-command-line-arg-processing
 #+header: :noweb yes
 #+begin_src js +n :tangle index.js
-  const option_defs = [
-      { name: 'help',   alias: 'h', type: Boolean, description: 'Prints this usage message.' },
-      { name: 'attach', alias: 'a', type: String,  description: 'Attach to an existing or new database file.' },
-      { name: 'delete', alias: 'd', type: String,  description: 'Delete an existing database file and related CSV files.' },
-      { name: 'csv',    alias: 'c', type: String,  description: 'Process a CSV file [6815|6831] yyyy', multiple: true  },
-      { name: 'export', alias: 'e', type: String,  description: 'Export identified sqlite3 data into a csv file', multiple: true },
-      { name: 'checks',             type: Boolean, description: 'Find checks in worklog.<year>.otl and save to sqlite3 database checks file.' },
-      { name: 'log-level', alias: 'l', type: Number, description: 'Set a log level 0..10' },
-  ];
   const options = cl_args(option_defs);
   console.log(options);
 
   if (options.help) {
-      <<csv-sqlite3-usage>>
+      console.log(cl_usage(usage));
       process.exit(0);
   }
 
@@ -736,12 +751,13 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
   }
   console.log(`Log-level set at: ${LOG_LEVEL}`);
 
-  /* ATTACH OR DELETE */
-  let db;
-  if (options.hasOwnProperty('attach') || options.hasOwnProperty'delete') {
-      const option = options.attach ? 'attach' : 'delete';
-      const value = options.attach ? options.attach : options.delete;
-      db = require('./lib/sql/db')[option](value);
+  /* DELETE */
+  if ( options.hasOwnProperty('delete') ) {
+      require('./lib/sql/db').delete(options.delete);
+  }
+
+  if (!options.hasOwnProperty('attach')) {
+      options.attach = null;
   }
 
   if (options.hasOwnProperty('csv')) { // process --csv ACCT YEAR
@@ -752,6 +768,7 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
       const csv_source_stream = require('./lib/csv/source_stream');
       const csv_file_stream   = csv_source_stream(options.csv);
       const csv_file_parser   = require('./lib/csv/file_parser');
+      csv_file_parser.options = options;
 
       csv_file_stream.on('error', function(err) {
           console.error(err.message);
@@ -816,7 +833,7 @@ performance.
     exports.attach = function (db_file) {
         console.log('attaching...');
 
-        if (db_file === 'undefined') {
+        if (db_file === null) {
             db_file = DB_DEFAULT;
         }
 
@@ -1859,7 +1876,7 @@ records, for example.
   const stringifier   = require('./lib/csv/file_stringifier')(options.csv);
   const transform_fn  = require('./lib/csv/transform_function');
   exports.transformer = require('csv').transform(transform_fn);
-  const db      = require('./lib/sql/db');
+  const db      = require('./lib/sql/db').attach(exports.transformer.options.attach);
   const db_data = require('./lib/sql/definitions');
 
   /* TRANSFORMER reads records through its TRANSFORM_FUNCTION */
@@ -1930,13 +1947,15 @@ stream transformer using its =WRITE= method.
 #+begin_src js -n :tangle lib/csv/file_parser.js
   /* csv/file_parser */
 
-  const transformer = require('./lib/csv/file_transformer');
+  //exports.parser.options;
   exports.parser    = require('csv').parse({columns: true});
+  const transformer = require('./lib/csv/file_transformer');
+  transformer.options = exports.parser.options;
 
   parser.on('readable', function() {
       let record;
       while (record = parser.read()) {
-          transform.write(record); // continue down the rabbit hole
+          transformer.write(record); // continue down the rabbit hole
       }
   }).on('error', function(err) {
       console.error(err.message); 
