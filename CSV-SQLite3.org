@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 19:18>
-#+macro: version Version 0.0.84
+#+date:<2019-10-20 Sun 20:37>
+#+macro: version Version 0.0.85
 
 #+texinfo: @insertcopying
 
@@ -754,13 +754,13 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
       process.exit(0);
   }
 
-  if (!options.hasOwnProperty('attach')) {
+  if ( !options.hasOwnProperty('attach') ) {
       options.attach = null;
   }
 
-  if (options.hasOwnProperty('csv')) { // process --csv ACCT YEAR
-      // const acct = options.csv[0],
-      //       year = options.csv[1];
+  if ( options.hasOwnProperty('csv') ) { // process --csv ACCT YEAR
+      // options.csv[0] == acct
+      // options.csv[1] == year
 
       /* send a source stream through the file parser */
       const csv_source_stream = require('./lib/csv/source_stream');
@@ -851,16 +851,10 @@ performance.
   /*--ATTACH--*/
   exports.attach = function (db_file) {
 
-      if (db_file === null) {
-          db_file = DB_DEFAULT;
-      }
-
-      console.log(`Attaching db_file: ${db_file}`);
+      const {db_file_base, db_path} = format_paths(db_file);
+      console.log(`Attaching db_file: ${db_file_base}`);
 
       const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
-      /*const DATA = require('../db_data');*/
-
-      const {db_path, csv_path} = format_paths(db_file);
 
       const db = new sqlite3.Database(db_path, err => {
           if (err) {
@@ -868,6 +862,7 @@ performance.
           }
           console.log(`Successfully attached to database file ${db_path}`);
       });
+    
       db.serialize();
       db.run(`CREATE TABLE IF NOT EXISTS
       <<define-usb-table-data-schema>>`);
@@ -886,15 +881,7 @@ performance.
   /*---DELETE--*/
   exports.delete = function (db_file) {
 
-      if (db_file === null) {
-          db_file = DB_DEFAULT;
-      }
-      const ext = path.extname(db_file);
-      if (! (ext  === '' || ext === EXT)) {
-          console.error(`ERROR: wrong extension: ${ext}.  Either leave it off or use ${EXT}.`);
-          process.exit(1);
-      }
-      db_file = path.basename(db_file, EXT);
+      const {db_file_base, db_path, csv_path} = format_paths(db_file);
 
       const WORKBAK = ENV.WORKBAK;       // base directory for storing deleted files
       if (!fs.existsSync(WORKBAK)) fs.mkdirSync(WORKBAK);
@@ -926,17 +913,15 @@ performance.
       // Backup DB.sqlite, DB.csv
       const db_path_bak = path.format({
           dir: WORKBAK_DB,
-          name: db_file,
+          name: db_file_base,
           ext: `${EXT}.${Date.now()}`
       });
 
       const csv_path_bak = path.format({
           dir: WORKBAK_CSV,
-          name: db_file,
+          name: db_file_base,
           ext: `.csv.${Date.now()}`
       });
-
-      const {db_path, csv_path} = format_paths(db_file);
 
       try {
           fs.renameSync(db_path, db_path_bak);
@@ -1006,19 +991,31 @@ performance.
 
   function format_paths (db_file) {
 
+      if (db_file === null) {
+          db_file = DB_DEFAULT;
+      }
+
+      const ext = path.extname(db_file);
+
+      if (! (ext  === '' || ext === EXT)) {
+          console.error(`ERROR: wrong extension: ${ext}.  Either leave it off or use ${EXT}.`);
+          process.exit(1);
+      }
+      db_file_base = path.basename(db_file, EXT);
+
       const db_path = path.format({
           dir: WORKDB,
-          name: db_file,
+          name: db_file_base,
           ext:  EXT
       });
 
       const csv_path = path.format({
           dir: WORKCSV,
-          name: db_file,
+          name: db_file_base,
           ext: '.csv'
       });
 
-      return ({db_path, csv_path});
+      return ({db_file_base, db_path, csv_path});
   }
 #+end_src
 
