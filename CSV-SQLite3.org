@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 17:45>
-#+macro: version Version 0.0.82
+#+date:<2019-10-20 Sun 18:16>
+#+macro: version Version 0.0.83
 
 #+texinfo: @insertcopying
 
@@ -500,14 +500,20 @@ for the existence of the dependencies.
   exports.WORKUSB = process.env.WORKUSB;
   exports.WORKCSV = process.env.WORKCSV;
   exports.WORKBAK = process.env.WORKBAK;
+  exports.WORKNODE=process.env.WORKNODE;
   exports.WORKLEDGER = process.env.WORKLEDGER;
 
   (function check() {
+      let good = true;
       for (env in exports) {
           if (typeof exports[env] === 'undefined') {
-              console.error(`ERROR: Environment variable ${env} is not defined. Halting execution.`);
-              process.exit(1);
+              console.error(`ERROR: Environment variable ${env} is not defined.`);
+              good = false;
           }
+      }
+      if (!good) {
+          console.error('Halting execution');
+          process.exit(1);
       }
   })();
 #+end_src
@@ -594,7 +600,7 @@ install external dependencies.
 
 #+caption:Create the CSV-SQLite3 Package
 #+name:create-CSV-SQLite3-package
-#+header: :exports both :results output
+#+header: :results output :exports both
 #+begin_src sh
   yarn --yes --private init
   sed -i '' -e 's/\"version\": \"1.0.0\",/\"version\": \"0.0.76\",/' package.json
@@ -611,7 +617,7 @@ cat package.json
 ** Create the Index.js File
 
 The entry point to the project is through its ~index.js~ file.  This file
-processes the commndline arguments and dispatches to the appropriate points,
+processes the command-line arguments and dispatches to the appropriate points,
 
 #+name:csv-sqlite3-dependencies
 #+header: :mkdirp yes
@@ -668,15 +674,6 @@ uses the [[option-defs-variable][~option_defs~]] object.
       }
   ];
 
-#+end_src
-
-{{{heading(Usage)}}}
-
-#+caption:Command-Line-Usage Module
-#+name:csv-sqlite3-usage
-#+begin_src js
-const sections = ;
-console.log(cl_usage(sections));
 #+end_src
 
 *** Command Line Argument Processing
@@ -750,6 +747,8 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
       }
   }
   console.log(`Log-level set at: ${LOG_LEVEL}`);
+
+  process.exit(0);
 
   /* DELETE */
   if ( options.hasOwnProperty('delete') ) {
