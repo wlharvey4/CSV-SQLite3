@@ -29,7 +29,7 @@ $(DOCS)/$(INFO): $(TEXI) | docs-dir
 	makeinfo --output=$(DOCS)/ $(TEXI)
 
 install: package.json
-package.json:	$(ORG) | docs-dir
+package.json:	$(ORG) | docs-dir clean
 	emacs -Q --batch $(ORG) \
 	--eval '(require '\''ob-shell)' \
 	--eval '(require '\''ob-js)' \

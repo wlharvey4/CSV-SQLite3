@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 18:16>
-#+macro: version Version 0.0.83
+#+date:<2019-10-20 Sun 19:18>
+#+macro: version Version 0.0.84
 
 #+texinfo: @insertcopying
 
@@ -725,7 +725,7 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
 
 : csv-sqlite3 --log-level <value:0..10> | -l <value:0..10>
 
-*** Main ~index.js~ Implementation
+** Main ~index.js~ Implementation
 
 #+name:csv-sqlite3-command-line-arg-processing
 #+header: :noweb yes
@@ -748,11 +748,10 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
   }
   console.log(`Log-level set at: ${LOG_LEVEL}`);
 
-  process.exit(0);
-
   /* DELETE */
   if ( options.hasOwnProperty('delete') ) {
       require('./lib/sql/db').delete(options.delete);
+      process.exit(0);
   }
 
   if (!options.hasOwnProperty('attach')) {
@@ -823,184 +822,204 @@ performance.
 #+header: :mkdirp yes
 #+header: :noweb yes
 #+begin_src js -n :tangle lib/sql/db.js
-    /* lib/sql/db */
+  /* lib/sql/db */
 
-    const ENV = require('../../config/env');
-    const DB_DEFAULT = 'workfin';      // default sqlite db name
+  const fs   = require('fs');
+  const path = require('path');
+  const ENV  = require('../../config/env');
+  const WORKDB = ENV.WORKDB;      // base directory for storing workfin sqlite databases
+  if (!fs.existsSync(WORKDB)) fs.mkdirSync(WORKDB);
+  const WORKCSV = ENV.WORKCSV;       // base directory for .csv files
+  if (!fs.existsSync(WORKCSV)) fs.mkdirSync(WORKCSV);
+  const WORKLEDGER = ENV.WORKLEDGER; // base directory for .ledger files
+  if (!fs.existsSync(WORKLEDGER)) fs.mkdirSync(WORKLEDGER);
 
-    /*--ATTACH--*/
-    exports.attach = function (db_file) {
-        console.log('attaching...');
+  const DB_DEFAULT = 'workfin';  // default sqlite db name
+  const EXT = '.sqlite';
 
-        if (db_file === null) {
-            db_file = DB_DEFAULT;
-        }
+  console.error('In db.js');
 
-        const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
-        /*const DATA = require('../db_data');*/
+#+end_src
 
-        const WORKDB = ENV.WORKDB;         // base directory for .sqlite db files
-        if (!fs.existsSync(WORKDB)) fs.mkdirSync(WORKDB);
+** DB Attach Code
 
-        const WORKCSV = ENV.WORKCSV;       // base directory for .csv files
-        if (!fs.existsSync(WORKCSV)) fs.mkdirSync(WORKCSV);
+#+caption:DB Attach
+#+name:db-attach
+#+header: :mkdirp yes
+#+begin_src js -n :tangle lib/sql/db.js
 
-        const WORKLEDGER = ENV.WORKLEDGER; // base directory for .ledger files
-        if (!fs.existsSync(WORKLEDGER)) fs.mkdirSync(WORKLEDGER);
+  /*--ATTACH--*/
+  exports.attach = function (db_file) {
 
-        const ({db_path, csv_path}) = format_paths(db_file);
+      if (db_file === null) {
+          db_file = DB_DEFAULT;
+      }
 
-        const db = new sqlite3.Database(db_path, err => {
-            if (err) {
-                return console.error(`Error opening database file ${db_path}: ${err.message})`);
-            }
-            console.log(`Successfully attached to database file ${db_path}`);
-        });
-        db.serialize();
-        db.run(`CREATE TABLE IF NOT EXISTS
-        <<define-usb-table-data-schema>>`);
+      console.log(`Attaching db_file: ${db_file}`);
 
-        return db;
-    }
+      const sqlite3  = require('sqlite3').verbose();      // remove 'verbose' in production
+      /*const DATA = require('../db_data');*/
 
-    /*---DELETE--*/
-    exports.delete = function (db_file) {
-        console.log('deleting...');
+      const {db_path, csv_path} = format_paths(db_file);
 
-        if (db_file === 'undefined') {
-            db_file = DB_DEFAULT;
-        }
+      const db = new sqlite3.Database(db_path, err => {
+          if (err) {
+              return console.error(`Error opening database file ${db_path}: ${err.message})`);
+          }
+          console.log(`Successfully attached to database file ${db_path}`);
+      });
+      db.serialize();
+      db.run(`CREATE TABLE IF NOT EXISTS
+      <<define-usb-table-data-schema>>`);
 
-        const WORKBAK = ENV.WORKBAK;       // base directory for storing deleted files
-        if (!fs.existsSync(WORKBAK)) fs.mkdirSync(WORKBAK);
+      return db;
+  }
+#+end_src
 
-        const WORKBAK_DB = path.format({
-            dir: WORKBAK,
-            name: 'db'
-        });
-        if (!fs.existsSync(WORKBAK_DB)) {
-            fs.mkdirSync(WORKBAK_DB, {recursive: true});
-        }
+** DB Delete Code
 
-        const WORKCSV = ENV.WORKCSV;       // base directory for .csv files
-        if (!fs.existsSync(WORKCSV)) fs.mkdirSync(WORKCSV);
+#+caption:DB Delete
+#+name:db-delete
+#+header: :mkdirp yes
+#+begin_src js +n :tangle lib/sql/db.js
 
-        const WORKBAK_CSV= path.format({
-            dir:   WORKBAK,
-            name: 'csv'
-        });
-        if (!fs.existsSync(WORKBAK_CSV)) {
-            fs.mkdirSync(WORKBAK_CSV, {recursive: true});
-        }
+  /*---DELETE--*/
+  exports.delete = function (db_file) {
 
-        const WORKBAK_LEDGER = path.format({ // base directory for .ledger files
-            dir:   WORKBAK,
-            name: 'ledger'
-        });
-        if (!fs.existsSync(WORKBAK_LEDGER)) {
-            fs.mkdirSync(WORKBAK_LEDGER, {recursive: true});
-        }
+      if (db_file === null) {
+          db_file = DB_DEFAULT;
+      }
+      const ext = path.extname(db_file);
+      if (! (ext  === '' || ext === EXT)) {
+          console.error(`ERROR: wrong extension: ${ext}.  Either leave it off or use ${EXT}.`);
+          process.exit(1);
+      }
+      db_file = path.basename(db_file, EXT);
 
-        // Backup workfin.sqlite, workfin.csv
-        const db_path_bak = path.format({
-            dir: WORKBAK_DB,
-            name: db_file,
-            ext: `.sqlite.${Date.now()}`
-        });
+      const WORKBAK = ENV.WORKBAK;       // base directory for storing deleted files
+      if (!fs.existsSync(WORKBAK)) fs.mkdirSync(WORKBAK);
 
-        const csv_path_bak = path.format({
-            dir: WORKBAK_CSV,
-            name: db_file,
-            ext: `.csv.${Date.now()}`
-        });
+      const WORKBAK_DB = path.format({
+          dir: WORKBAK,
+          name: 'db'
+      });
+      if (!fs.existsSync(WORKBAK_DB)) {
+          fs.mkdirSync(WORKBAK_DB, {recursive: true});
+      }
 
-        const ({db_path}) = format_paths(db_file);
+      const WORKBAK_CSV= path.format({
+          dir:   WORKBAK,
+          name: 'csv'
+      });
+      if (!fs.existsSync(WORKBAK_CSV)) {
+          fs.mkdirSync(WORKBAK_CSV, {recursive: true});
+      }
 
-        try {
-            fs.renameSync(db_path, db_path_bak);
-            console.error(`Renamed ${db_path} to ${db_path_bak}`);
-            fs.renameSync(csv_path, csv_path_bak);
-            console.error(`Renamed ${csv_path} to ${csv_path_bak}`);
-        } catch (err) {
-            if (err.code === 'ENOENT')
-                console.log(`file ${db_path} and/or ${csv_path} did not exist; ignoring.`);
-            else {
-                throw err;
-            }
-        }
+      const WORKBAK_LEDGER = path.format({
+          dir:   WORKBAK,
+          name: 'ledger'
+      });
+      if (!fs.existsSync(WORKBAK_LEDGER)) {
+          fs.mkdirSync(WORKBAK_LEDGER, {recursive: true});
+      }
 
-        // Backup all .csv files
-        try {
-            const files = fs.readdirSync(WORKCSV);
-            files.forEach(file => {
-                const db_csv_path_file = path.format({
-                    dir: WORKCSV,
-                    name: file
-                });
-                const db_csv_path_bak  = path.format({
-                    dir: WORKBAK_CSV,
-                    name: file,
-                    ext: `.${Date.now()}`
-                });
-                fs.renameSync(db_csv_path_file, db_csv_path_bak);
-                console.log(`Renamed ${db_csv_path_file} to ${db_csv_path_bak}`);
-            });
+      // Backup DB.sqlite, DB.csv
+      const db_path_bak = path.format({
+          dir: WORKBAK_DB,
+          name: db_file,
+          ext: `${EXT}.${Date.now()}`
+      });
 
-        } catch (err) {
-            if (err.code === 'ENOENT') {
-                console.log(`${db_csv_path} probably does not exist`);
-            } else {
-                throw err;
-            }
-        }
+      const csv_path_bak = path.format({
+          dir: WORKBAK_CSV,
+          name: db_file,
+          ext: `.csv.${Date.now()}`
+      });
 
-        /* Ledger */
-        try {
-            const files = fs.readdirSync(WORKLEDGER);
-            files.forEach(file => {
-                if (!/zero/.test(file)) { // don't backup the zero ledger file
-                    const ledger_file = path.format({
-                        dir: WORKLEDGER,
-                        name: file
-                    });
-                    const ledger_file_bak = path.format({
-                        dir: WORKBAK_LEDGER,
-                        name: file,
-                        ext: `.${Date.now()}`
-                    });
-                    fs.renameSync(ledger_file, ledger_file_bak);
-                    console.log(`Renamed ${ledger_file} to ${ledger_file_bak}`);
-                }
-            });
+      const {db_path, csv_path} = format_paths(db_file);
 
-        } catch (err) {
-            if (err.code === 'ENOENT') {
-                console.log(`${ledger_path} probably does not exist`);
-            } else {
-                throw err;
-            }
-        }
-        process.exit(0);
-    }
+      try {
+          fs.renameSync(db_path, db_path_bak);
+          console.error(`Renamed ${db_path} to ${db_path_bak}`);
+          fs.renameSync(csv_path, csv_path_bak);
+          console.error(`Renamed ${csv_path} to ${csv_path_bak}`);
+      } catch (err) {
+          if (err.code === 'ENOENT')
+              console.log(`file ${db_path} and/or ${csv_path} did not exist; ignoring.`);
+          else {
+              throw err;
+          }
+      }
 
-    function format_paths (db_file) {
+      // Backup all .csv files
+      try {
+          const files = fs.readdirSync(WORKCSV);
+          files.forEach(file => {
+              const db_csv_path_file = path.format({
+                  dir: WORKCSV,
+                  name: file
+              });
+              const db_csv_path_bak  = path.format({
+                  dir: WORKBAK_CSV,
+                  name: file,
+                  ext: `.${Date.now()}`
+              });
+              fs.renameSync(db_csv_path_file, db_csv_path_bak);
+              console.log(`Renamed ${db_csv_path_file} to ${db_csv_path_bak}`);
+          });
 
-        const db_path = path.format({
-            dir: WORKDB,
-            name: db_file,
-            ext: '.sqlite'
-        });
-        console.log(`db_path: ${db_path}`);
+      } catch (err) {
+          if (err.code === 'ENOENT') {
+              console.log(`${db_csv_path} probably does not exist`);
+          } else {
+              throw err;
+          }
+      }
 
-        const csv_path = path.format({
-            dir: WORKCSV,
-            name: db_file,
-            ext: '.csv'
-        });
-        console.log(`csv_path: ${csv_path}`);
+      /* Ledger */
+      try {
+          const files = fs.readdirSync(WORKLEDGER);
+          files.forEach(file => {
+              if (!/zero/.test(file)) { // don't backup the zero ledger file
+                  const ledger_file = path.format({
+                      dir: WORKLEDGER,
+                      name: file
+                  });
+                  const ledger_file_bak = path.format({
+                      dir: WORKBAK_LEDGER,
+                      name: file,
+                      ext: `.${Date.now()}`
+                  });
+                  fs.renameSync(ledger_file, ledger_file_bak);
+                  console.log(`Renamed ${ledger_file} to ${ledger_file_bak}`);
+              }
+          });
 
-        return ({db_path, csv_path});
-    }
+      } catch (err) {
+          if (err.code === 'ENOENT') {
+              console.log(`${ledger_path} probably does not exist`);
+          } else {
+              throw err;
+          }
+      }
+  }
+
+  function format_paths (db_file) {
+
+      const db_path = path.format({
+          dir: WORKDB,
+          name: db_file,
+          ext:  EXT
+      });
+
+      const csv_path = path.format({
+          dir: WORKCSV,
+          name: db_file,
+          ext: '.csv'
+      });
+
+      return ({db_path, csv_path});
+  }
 #+end_src
 
 * Find and Store Checks
@@ -2495,7 +2514,7 @@ $(DOCS)/$(INFO): $(TEXI) | docs-dir
 	makeinfo --output=$(DOCS)/ $(TEXI)
 
 install: package.json
-package.json:	$(ORG) | docs-dir
+package.json:	$(ORG) | docs-dir clean
 	emacs -Q --batch $(ORG) \
 	--eval '(require '\''ob-shell)' \
 	--eval '(require '\''ob-js)' \
