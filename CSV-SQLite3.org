@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 20:40>
-#+macro: version Version 0.0.86
+#+date:<2019-10-20 Sun 20:58>
+#+macro: version Version 0.0.87
 
 #+texinfo: @insertcopying
 
@@ -763,8 +763,7 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
       // options.csv[1] == year
 
       /* send a source stream through the file parser */
-      const csv_source_stream = require('./lib/csv/source_stream');
-      const csv_file_stream   = csv_source_stream(options.csv);
+      const csv_file_stream   = require('./lib/csv/source_stream')(options.csv);
       const csv_file_parser   = require('./lib/csv/file_parser');
       csv_file_parser.options = options;
 
@@ -1092,7 +1091,88 @@ Node.js modules:
 
    - [[*Set Up the Stream Transform][Set Up the Stream Transform]]
 
-** Set up Data Definitions
+** Set Up the CSV Source Stream
+This section implements a =Readable Stream= that reads the CSV file in as a
+string of data and sends it to a CSV ~parser~ via the parser's ~write()~
+method.
+
+{{{heading(CSV Financial Files)}}}
+
+CSV financial files are found in the set of directories 
+: =$WORKUSB/usb_[6815|6831|6151]/yyyy=,
+
+{{{noindent}}}where =yyyy= can be one of 2004--2019.  Given an account
+(=[6815|6831|6151]=) and a year (=[2004|2005...2019]=), the source path is
+constructed as:
+: =$WORKUSB/usb_ACCT/YYYY/usb_ACCT--yyyy.csv=.
+
+{{{heading(The {{{option(--csv)}}} Option)}}}
+
+The user supplies an account (=6815|6831|6151=) and a year (one of
+=[2016|2017|2018|2019]=) using the {{{option(--csv)}}} option on the command
+line, e.g.:
+: --csv 6815 2016
+
+{{{noindent}}}Given this data, a source CSV file can be found, validated by
+making sure that (1) the file exists and (2) the user has proper permissions to
+read it before proceeding, and then turned into a =Readable Stream=.  Once a
+=Readable Stream= has been obtained, it can be sent to the CSV parser via the
+parser's ~write()~ method.
+
+{{{heading(CSV Source Stream)}}}
+
+#+caption:Create the CSV Source Stream
+#+name:create-csv-source-stream
+#+header: :mkdirp yes
+#+begin_src js -n :tangle lib/csv/source_stream.js
+    /* csv/source_stream */
+
+  const fs   = require('fs');
+  const path = require('path');
+  const {WORKUSB} = require('../../config/env');
+
+  module.exports = function(csv_info) { // csv_info = options.csv = [acct, year]
+
+      try {
+          return fs.createReadStream(
+              validate_data(csv_info),
+              {encoding: 'utf8'}
+          );
+
+      } catch (err) {
+          console.error(err.message);
+          process.exit(1);
+      }
+  }
+
+  function validate_data ([acct, year]) {
+      /* 'acct' and 'year' come from the command-line option '--csv'
+         acct = options.csv[0]
+         year = options.csv[1] */
+
+      const csv_path = path.join(
+          WORKUSB,
+          `usb_${acct}`,
+          year,
+          `usb_${acct}--${year}.csv`
+      );
+
+      if (fs.existsSync(csv_path)) {
+          try {
+              (fs.accessSync(csv_path, fs.constants.R_OK));
+              return csv_path;
+
+          } catch (err) {
+              console.error(err.message);
+              throw err;
+          }
+
+      } else {
+          throw new ReferenceError(`The path ${csv_path} does not exist.`);
+      }
+  }
+  #+end_src
+
 ** Set Up CSV-Stringify
 #+cindex:@file{csv-stringify}
 This section receives the transformed records from the Transform function and
@@ -1473,84 +1553,6 @@ stream transformer using its =WRITE= method.
 
   });
 #+end_src
-
-** Set Up the CSV Source Stream
-This section implements a =Readable Stream= that reads the CSV file in as a
-string of data and sends it to a CSV ~parser~ via the parser's ~write()~
-method.
-
-{{{heading(CSV Financial Files)}}}
-
-CSV financial files are found in the set of directories 
-: =$WORKUSB/usb_[6815|6831|6151]/yyyy=,
-
-{{{noindent}}}where =yyyy= can be one of 2004--2019.  Given an account
-(=[6815|6831|6151]=) and a year (=[2004|2005...2019]=), the source path is
-constructed as:
-: =$WORKUSB/usb_ACCT/YYYY/usb_ACCT--yyyy.csv=.
-
-{{{heading(The {{{option(--csv)}}} Option)}}}
-
-The user supplies an account (=6815|6831|6151=) and a year (one of
-=[2016|2017|2018|2019]=) using the {{{option(--csv)}}} option on the command
-line, e.g.:
-: --csv 6815 2016
-
-{{{noindent}}}Given this data, a source CSV file can be found, validated by
-making sure that (1) the file exists and (2) the user has proper permissions to
-read it before proceeding, and then turned into a =Readable Stream=.  Once a
-=Readable Stream= has been obtained, it can be sent to the CSV parser via the
-parser's ~write()~ method.
-
-{{{heading(CSV Source Stream)}}}
-
-#+caption:Create the CSV Source Stream
-#+name:create-csv-source-stream
-#+header: :mkdirp yes
-#+begin_src js -n :tangle lib/csv/source_stream.js
-    /* csv/source_stream */
-
-  const fs   = require('fs');
-  const path = require('path');
-  const {WORKUSB} = require('../../config/env');
-
-  module.exports = function(csv_info) { // csv_info = options.csv = [acct, year]
-
-      try {
-          return csv_stream = fs.createReadStream(
-              validate_data(csv_info),
-              {encoding: 'utf8'}
-          );
-      } catch (err) {
-          console.error(err.message);
-          process.exit(1);
-      }
-  }
-
-  function validate_data ([acct, year]) {
-      /* 'acct' and 'year' come from the command-line option '--csv'
-         acct = options.csv[0]
-         year = options.csv[1] */
-
-      const csv_path = path.join(
-          WORKUSB,
-          `usb_${acct}`,
-          year,
-          `usb_${acct}--${year}`
-      );
-      if (fs.existsSync(csv_path)) {
-          try {
-              (fs.accessSync(csv_path, fs.constants.R_OK));
-              return csv_path;
-          } catch (err) {
-              console.error(err.message);
-              thrown err;
-          }
-      } else {
-          throw new ReferenceError(`The path ${csv_path} does not exist.`);
-      }
-  }
-  #+end_src
 
 * Export SQLite DB Data to CSV File
 Once data has been downloaded from the bank's web site and imported into the
