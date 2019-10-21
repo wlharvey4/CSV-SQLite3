@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 22:13>
-#+macro: version Version 0.0.88
+#+date:<2019-10-20 Sun 22:36>
+#+macro: version Version 0.0.89
 
 #+texinfo: @insertcopying
 
@@ -777,8 +777,8 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
 
       });
 
-      console.log('Ready for the rabbit hole');
-      process.exit(0);
+      console.log('Ready for the rabbit hole...entering...');
+
       csv_file_stream.pipe(csv_file_parser); // down the rabbit hole
   }
 #+end_src
@@ -839,6 +839,7 @@ performance.
 #+caption:DB Attach
 #+name:db-attach
 #+header: :mkdirp yes
+#+header: :noweb yes
 #+begin_src js -n :tangle lib/sql/db.js
 
   /*--ATTACH--*/
@@ -1131,8 +1132,9 @@ parser's ~write()~ method.
 
       console.log('With csv_info: ', csv_info);
 
+      let csv_stream;
       try {
-          return fs.createReadStream(
+          csv_stream = fs.createReadStream(
               validate_data(csv_info),
               {encoding: 'utf8'}
           );
@@ -1141,6 +1143,7 @@ parser's ~write()~ method.
           console.error(err.message);
           process.exit(1);
       }
+      return csv_stream;
   }
 
   function validate_data ([acct, year]) {
@@ -1212,6 +1215,7 @@ stream transformer using its =WRITE= method.
           transformer.end();
 
       });
+      return parser;
   }
 #+end_src
 
@@ -1271,7 +1275,7 @@ records, for example.
       let   trfrom  = '';
 
       // Add new columns: acct, checkno, txfr, caseno, desc1, desc2, category
-      record.acct    = usb_acct;
+      record.acct    = acct;
       record.checkno = null; // check no.
       record.txfr    = null; // direction and acct #
       record.caseno  = null; // related case foreign key
@@ -1486,7 +1490,7 @@ records, for example.
           stringifier.end();
 
       });
-
+      return transformer;
   }
 #+end_src
 
@@ -1563,6 +1567,8 @@ the source files use two dashes; in all other respects, they are the same.
           console.log('file_stringifier is now closed');
 
       });
+
+      return file_stringifier;
   }
 #+end_src
 
