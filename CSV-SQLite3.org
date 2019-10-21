@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 20:58>
-#+macro: version Version 0.0.87
+#+date:<2019-10-20 Sun 22:13>
+#+macro: version Version 0.0.88
 
 #+texinfo: @insertcopying
 
@@ -762,10 +762,11 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
       // options.csv[0] == acct
       // options.csv[1] == year
 
+      console.log('Entered --csv');
+
       /* send a source stream through the file parser */
       const csv_file_stream   = require('./lib/csv/source_stream')(options.csv);
-      const csv_file_parser   = require('./lib/csv/file_parser');
-      csv_file_parser.options = options;
+      const csv_file_parser   = require('./lib/csv/file_parser')(options);
 
       csv_file_stream.on('error', function(err) {
           console.error(err.message);
@@ -776,17 +777,10 @@ database name; use {{{option(--attach)}}} to identify a non-default database.
 
       });
 
+      console.log('Ready for the rabbit hole');
+      process.exit(0);
       csv_file_stream.pipe(csv_file_parser); // down the rabbit hole
   }
-
-    // year is needed for checks, so define it here
-    const [acct,year] = options.csv;
-    if (!year) {
-      console.error('ERROR: year is not defined.');
-      process.exit(1);
-    }
-    const wl_year = parseInt(year, 10);
-
 #+end_src
 
 * Attach To or Delete a Database
@@ -1079,7 +1073,7 @@ Node.js modules:
 
 6. Transform the JS records into usable data (using ~CSV-Transform~)
 
-   - [[*Set Up the Stream Transform][Set Up the Stream Transform]]
+   - [[*Set Up the CSV File Transform][Set Up the CSV File Transform]]
 
    - [[*Set Up the Transform Function][Set Up the Transform Function]]
 
@@ -1089,7 +1083,7 @@ Node.js modules:
 
 8. Save the new data in an SQLite3 database (using ~SQLite3~)
 
-   - [[*Set Up the Stream Transform][Set Up the Stream Transform]]
+   - [[*Set Up the CSV File Transform][Set Up the CSV File Transform]]
 
 ** Set Up the CSV Source Stream
 This section implements a =Readable Stream= that reads the CSV file in as a
@@ -1127,11 +1121,15 @@ parser's ~write()~ method.
 #+begin_src js -n :tangle lib/csv/source_stream.js
     /* csv/source_stream */
 
+  console.log('Entered source_stream.js');
+
   const fs   = require('fs');
   const path = require('path');
   const {WORKUSB} = require('../../config/env');
 
   module.exports = function(csv_info) { // csv_info = options.csv = [acct, year]
+
+      console.log('With csv_info: ', csv_info);
 
       try {
           return fs.createReadStream(
@@ -1173,73 +1171,45 @@ parser's ~write()~ method.
   }
   #+end_src
 
-** Set Up CSV-Stringify
-#+cindex:@file{csv-stringify}
-This section receives the transformed records from the Transform function and
-writes them to new CSV files.  The new CSV files will be located in the
-=WORKCSV= directory, i.e., ~WORKFIN/csv~.  A file will be called, for example,
-~usb_6815__2016.csv~.  Notice that this file name uses two underscores, whereas
-the source files use two dashes; in all other respects, they are the same.
+** Set Up CSV-Parse
 
-#+caption:Create the CSV File Stringifier
-#+name:create-csv-file-stringifier
+#+cindex:@code{write} method, transformer
+This section implements the csv parser.  By default, it does little other than
+read a large string of data and parse it into an array of records.  By giving
+it the option =columns = true=, however, the parser will use the first line as
+a list of column headings, and produce an array of objects where the keys are
+column names, and the values are column entries.  Each record is written to the
+stream transformer using its =WRITE= method.
+
+<<csv-transformer-write-method>>
+
+#+caption:Create the CSV File Parser
+#+name:create-csv-file-parser
 #+header: :mkdirp yes
-#+begin_src js -n :tangle lib/csv/file_stringifier.js
-  /* csv/file_stringifier */
+#+begin_src js -n :tangle lib/csv/file_parser.js
+  /* csv/file_parser */
 
-  const fs   = require('fs');
-  const path = require('path');
-  const {DB_COLS} = require('../sql/definitions');
+  console.log('Entered file_parser');
+  const parser      = require('csv').parse({columns: true});
 
-  const file_stringifier = require('csv').stringify({
-      header: true,
-      columns: DB_COLS,
-  });
+  module.exports = function (options) {
+    
+      const transformer = require('./file_transformer')(options);
 
-  module.exports = function([acct, year]) {
-      const usb_acct      = `usb_${acct}`;
-      const usb_acct_year = path.format({
-          name: `${usb_acct}__${year}`
-          ext: '.csv'
-      });
-      console.log(`usb_acct_year: ${usb_acct_year}`);
-
-      const csv_path_file = path.join(
-          WORKCSV,
-          usb_acct_year
-      );
-      console.log(`CSV PATH FILE: ${csv_path_file}`);
-
-      let csv_file_stream;
-      try {
-          csv_file_stream = fs.createWriteStream(csv_path_file);
-          console.log(`WRITE STREAM: ${csv_path_file} has been successfully opened.`);
-
-          csv_file_stream.on('close', function() {
-              console.log('csv_file_stream is now closed');
-          });
-      } catch (err) {
-          console.error(err.message);
-          process.exit(1);
-      }
-
-      file_stringifier.on('readable', function() {
-          console.log('file_stringifier is now readable');
-          let row;
-          while (row = this.read()) {
-              console.log(`stringifer row: ${row}`);
-              csv_file_stream.write(row);
+      parser.on('readable', function() {
+          let record;
+          while (record = parser.read()) {
+              transformer.write(record); // continue down the rabbit hole
           }
-
       }).on('error', function(err) {
-          console.error(err.message);
+          console.error(err.message); 
+
+      }).on('end', function() {
+          console.log('Parser has ended reading.');
 
       }).on('finish', function() {
-          console.log('file_stringifier is done writing to csv_stringifer');
-          csv_file_stream.end('stringifer called csv_file_stream\'s "end" method');
-
-      }).on('close', function() {
-          console.log('file_stringifier is now closed');
+          console.log('Parser finished writing.');
+          transformer.end();
 
       });
   }
@@ -1449,7 +1419,7 @@ records, for example.
 #+RESULTS: stream-transform-function
 : undefined
 
-*** Set Up the Stream Transform
+*** Set Up the CSV File Transform
 
 #+caption:Create the CSV File Transform
 #+name:create-csv-file-transform
@@ -1457,101 +1427,143 @@ records, for example.
 #+begin_src js -n :tangle lib/csv/file_transformer.js
   /* csv/file_transformer */
 
-  const stringifier   = require('./lib/csv/file_stringifier')(options.csv);
-  const transform_fn  = require('./lib/csv/transform_function');
-  exports.transformer = require('csv').transform(transform_fn);
-  const db      = require('./lib/sql/db').attach(exports.transformer.options.attach);
-  const db_data = require('./lib/sql/definitions');
+  console.log('Entered file_transformer');
 
-  /* TRANSFORMER reads records through its TRANSFORM_FUNCTION */
-  /* -------------------------------------------------------- */
-  transformer.on('readable', function() { // the rabbit does its thing
-      let record;
-      while ((record = transformer.read())) { // and spits it out
-          console.log(`Transformer record:\n${util.inspect(record)}`);
+  const transform_fn = require('./transform_function');
+  const transformer  = require('csv').transform(transform_fn);
 
-          /* STRINGIFIER WRITE Records */
-          /* ------------------------- */
-          stringifier.write(record); // and continue down the rabbit hole
+  module.exports = function (options) {
+
+      const stringifier   = require('./file_stringifier')(options.csv);
+      const db            = require('../sql/db').attach(options.attach);
+      const db_data       = require('../sql/db_data');
+
+      /* TRANSFORMER reads records through its TRANSFORM_FUNCTION */
+      /* -------------------------------------------------------- */
+      transformer.on('readable', function() { // the rabbit does its thing
+          let record;
+          while ((record = transformer.read())) { // and spits it out
+              console.log(`Transformer record:\n${util.inspect(record)}`);
+
+              /* STRINGIFIER WRITE Records */
+              /* ------------------------- */
+              stringifier.write(record); // and continue down the rabbit hole
 
 
 
-          /* DB RUN---INSERT RECORDS */
-          /* ----------------------- */
-          const tab_name  = db_data.DB_TABLES['usb'];
-          const col_names = db_data.DB_COLS.join(',');
-          const col_phs   = db_data.DB_COLS.map(c => '?').join(',');
-          const col_values= db_data.DB_COLS.map(c => record[c]);
+              /* DB RUN---INSERT RECORDS */
+              /* ----------------------- */
+              const tab_name  = db_data.DB_TABLES['usb'];
+              const col_names = db_data.DB_COLS.join(',');
+              const col_phs   = db_data.DB_COLS.map(c => '?').join(',');
+              const col_values= db_data.DB_COLS.map(c => record[c]);
 
-          let sql = `INSERT INTO ${ tab_name }( ${ col_names } )
+              let sql = `INSERT INTO ${ tab_name }( ${ col_names } )
                      VALUES ( ${ col_phs } )`;
 
-          console.log(`sql: ${ sql }`);
-          console.log(`col_values: ${ col_values }`);
+              console.log(`sql: ${ sql }`);
+              console.log(`col_values: ${ col_values }`);
 
-          db.run(sql, col_values, (err) => { /* WRONG DB */
-             if (err) {
-                 console.error(err.message);
-                 console.error(`ERROR sql: ${ sql }`);
-                 console.error(`ERROR values: ${ col_values }`);
-                 process.exit(1);
-             }
-         });
-     }
-  });
+              db.run(sql, col_values, (err) => { /* WRONG DB */
+                  if (err) {
+                      console.error(err.message);
+                      console.error(`ERROR sql: ${ sql }`);
+                      console.error(`ERROR values: ${ col_values }`);
+                      process.exit(1);
+                  }
+              });
+          }
+      });
 
-  transformer.on('error', function(err) {
-      console.error(err.message);
+      transformer.on('error', function(err) {
+          console.error(err.message);
 
-  })..on('finish', function() {
-      console.log('Transformer finished writing records.');
+      }).on('finish', function() {
+          console.log('Transformer finished writing records.');
 
-  }).on('end', function() {
-      console.log('Transformer end reached.');
-      stringifier.end();
+      }).on('end', function() {
+          console.log('Transformer end reached.');
+          stringifier.end();
 
-  });
+      });
+
+  }
 #+end_src
 
-** Set Up CSV-Parse
+** Set Up CSV-Stringify
+#+cindex:@file{csv-stringify}
+This section receives the transformed records from the Transform function and
+writes them to new CSV files.  The new CSV files will be located in the
+=WORKCSV= directory, i.e., ~WORKFIN/csv~.  A file will be called, for example,
+~usb_6815__2016.csv~.  Notice that this file name uses two underscores, whereas
+the source files use two dashes; in all other respects, they are the same.
 
-#+cindex:@code{write} method, transformer
-This section implements the csv parser.  By default, it does little other than
-read a large string of data and parse it into an array of records.  By giving
-it the option =columns = true=, however, the parser will use the first line as
-a list of column headings, and produce an array of objects where the keys are
-column names, and the values are column entries.  Each record is written to the
-stream transformer using its =WRITE= method.
-
-<<csv-transformer-write-method>>
-
-#+caption:Create the CSV File Parser
-#+name:create-csv-file-parser
+#+caption:Create the CSV File Stringifier
+#+name:create-csv-file-stringifier
 #+header: :mkdirp yes
-#+begin_src js -n :tangle lib/csv/file_parser.js
-  /* csv/file_parser */
+#+begin_src js -n :tangle lib/csv/file_stringifier.js
+  /* csv/file_stringifier */
 
-  //exports.parser.options;
-  exports.parser    = require('csv').parse({columns: true});
-  const transformer = require('./lib/csv/file_transformer');
-  transformer.options = exports.parser.options;
+  console.log('Entered file_stringifier.js');
 
-  parser.on('readable', function() {
-      let record;
-      while (record = parser.read()) {
-          transformer.write(record); // continue down the rabbit hole
-      }
-  }).on('error', function(err) {
-      console.error(err.message); 
+  const fs   = require('fs');
+  const path = require('path');
+  const {WORKCSV} = require('../../config/env');
+  const {DB_COLS} = require('../sql/db_data');
 
-  }).on('end', function() {
-      console.log('Parser has ended reading.');
-
-  }).on('finish', function() {
-      console.log('Parser finished writing.');
-      transformer.end();
-
+  const file_stringifier = require('csv').stringify({
+      header: true,
+      columns: DB_COLS,
   });
+
+  module.exports = function([acct, year]) {
+
+      /* TODO: verify acct, year */
+
+      const usb_acct      = `usb_${acct}`;
+      const usb_acct_year = path.format({
+          name: `${usb_acct}__${year}`,
+          ext: '.csv'
+      });
+
+      const csv_path_file = path.join(
+          WORKCSV,
+          usb_acct_year
+      );
+
+      let csv_file_stream;
+      try {
+          csv_file_stream = fs.createWriteStream(csv_path_file);
+          console.log(`WRITE STREAM: ${csv_path_file} has been successfully opened.`);
+
+          csv_file_stream.on('close', function() {
+              console.log('csv_file_stream is now closed');
+          });
+      } catch (err) {
+          console.error(err.message);
+          process.exit(1);
+      }
+
+      file_stringifier.on('readable', function() {
+          console.log('file_stringifier is now readable');
+          let row;
+          while (row = this.read()) {
+              console.log(`stringifer row: ${row}`);
+              csv_file_stream.write(row);
+          }
+
+      }).on('error', function(err) {
+          console.error(err.message);
+
+      }).on('finish', function() {
+          console.log('file_stringifier is done writing to csv_stringifer');
+          csv_file_stream.end('stringifer called csv_file_stream\'s "end" method');
+
+      }).on('close', function() {
+          console.log('file_stringifier is now closed');
+
+      });
+  }
 #+end_src
 
 * Export SQLite DB Data to CSV File
