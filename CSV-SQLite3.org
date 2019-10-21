@@ -3,8 +3,8 @@
 #+subtitle:Convert CSV files into data used by SQLite3
 #+subtitle:({{{version}}} {{{date(%A %B %d\, %Y)}}})
 #+author:LOLH
-#+date:<2019-10-20 Sun 20:37>
-#+macro: version Version 0.0.85
+#+date:<2019-10-20 Sun 20:40>
+#+macro: version Version 0.0.86
 
 #+texinfo: @insertcopying
 
@@ -1019,517 +1019,6 @@ performance.
   }
 #+end_src
 
-* Find and Store Checks
-
-After the Sqlite3 database is exported and converted by Ledger, there are
-numerous individual entries that need to be converted but for which there is no
-real data available to help.  An example would be checks.  The check
-information is located in the worklog, so one solution is to parse the worklog
-to obtain check information, then parse the Ledger file to update it.
-
-I created a package called =wlparser= that can be used to find particular
-elements in the ~worklog.<year>.otl~ files.  Among other things, this package
-is set up to find and return all checks for a particular year.  At this point,
-the ~findChecks~ program requires an argument for a =<year>=, and will then
-gather all checks and place them into the SQLite3 database in a table called
-=checks=.  It can be run any number of times for any yeaer and will not add
-duplicate entries.
-
-When this ~csv-sqlite3~ program converts the CSV files into the =ledger=
-format, it can do a search for a particular check number in this SQLite3
-=checks= table and incorporate that data into the ledger file.
-
-Use the commandline program ~find-checks <year>~ to find and store checks from
-the worklog yearly file identified by =<year>= option (i.e.,
-~worklog.<year>.otl~) and save it into the SQLite3 database =<db>= in a table
-called =checks=.
-
-#+caption:The =find-checks= script file
-#+name:find-checks-script-file
-#+header: :mkdirp yes :noweb yes
-#+header: :shebang "#!/usr/bin/env node"
-#+begin_src js -n :tangle scripts/find-checks.js
-  /* find-checks.js */
-
-  /* USAGE:
-   ,* find-checks <year> [db]
-   ,*/
-
-  const DEFAULT_DB = 'workfin';
-  const TABLE      = 'checks';
-  const EXT        = '.sqlite';
-
-  // make sure WORKDB is defined
-  if (typeof process.env.WORKDB === 'undefined') {
-    console.error('Must defined environment variable for WORKDB');
-    process.exit(1);
-  }
-  const WORKDB = process.env.WORKDB;
-
-  // make sure a <year> argument is included
-  if (process.argv.length < 3) {
-    console.error('Must include a <year> argument: "find-checks <year>"');
-    process.exit(1);
-  }
-
-  // make sure the <year> argument is a number
-  const wlyear = parseInt(process.argv[2],10);
-  if (isNaN(wlyear)) {
-    console.error(`The <year> argument: "${process.argv[2]}" must be a year, e.g., "2016"`);
-    process.exit(1);
-  }
-
-  // second optional argument is the name of the database, without extension
-  // if no second argument, use default db of $WORKDB/workfin.sqlite
-  const path   = require('path');
-  const db_path = path.format({
-    dir: WORKDB,
-    name: `${process.argv[3] || DEFAULT_DB}`,
-    ext: EXT
-  });
-
-  // Everything is a go; load the wlparser, wlchecks, sqlite3 modules
-  const {WLChecks}   = require('wlparser');
-  const wlchecks     = new WLChecks(wlyear);
-  const sqlite3      = require('sqlite3').verbose(); // remove verbose() for production code
-  const {CHECK_COLS} = require('../lib/sql/definitions');
-
-  let statement;
-
-  // Load the sqlite3 database
-  const db = new sqlite3.Database(db_path, err => {
-    if (err) {
-      console.error(`Database Error: ${err}`);
-      process.exit(1);
-    }
-    console.log(`Successfully opened database at ${db_path}`);
-  });
-
-  db.serialize();
-
-  statement = `CREATE TABLE IF NOT EXISTS
-  <<define-checks-table-schema>>`;
-  db.run(statement);
-
-  let cols = CHECKS_COLS.join(','); // create string of column names for INSERT statement
-  let values = CHECKS_COLS.map(col => `$${col}`).join(', '); // create string of placeholders for INSERT statement
-  statement = `INSERT INTO ${TABLE} (${cols}) VALUES (${values})`;
-
-  let all_checks = []; // used to filter out already-entered checks
-
-  wlchecks.on('check', data => {
-    delete data.type; // simply don't need this property
-    if (!all_checks.includes(data.checkno)) { // filter out already-entered checks
-        const new_data = {};
-        for (k in data) { // create the named parameters of form 'new_data = {$checkno: 1234}'
-            new_data[`$${k}`] = data[k];
-        }
-        db.run(statement, new_data, (err) => { // add the check data to the sqlite database
-            if (err) console.error(`ERROR: ${err}`);
-        });
-    };
-
-  }).on('checked', () => {
-    db.close();
-
-  }).on('error', err => {
-    process.exit(1);
-
-  });
-
-  // load all of the previously-entered checks into the array 'all_checks'
-  db.all(`SELECT checkno FROM ${TABLE} WHERE date LIKE '${wlyear}%'`, [], (err, check_data) => {
-      if (check_data) {
-          all_checks = check_data.map(row => row.checkno);
-      }
-
-      wlchecks.findChecks(); // start the stream running
-  });
-
-#+end_src
-
-#+RESULTS: find-checks-script-file
-
-{{{heading(Create Symbolic Link into WORKBIN)}}}
-
-This code creates a symbolic link into the =WORKBIN= directory for the command
-line program =find-checks= so that it can be run as a script.  Note that the
-link must be symbolic in order for the ~node_modules/wlparser/lib/*~ files to
-be found when ~find-checks~ is run from the =WORKBIN= directory.
-
-#+begin_src sh :results output :exports both :dir scripts
-ln -sf $PWD/find-checks.js $WORKBIN/find-checks
-#+end_src
-
-* Export SQLite DB Data to CSV File
-Once data has been downloaded from the bank's web site and imported into the
-sqlite3 database, it must be converted into a Ledger file.  This is
-accomplished using the {{{option(--export)}}} option.
-
-** =--export= Option
-
-#+cindex:@option{--export} option
-To export the SQLite3 database data to CSV and Ledger files, use the
-{{{option(--export)}}} option:
-
-: --export ACCT YEAR [--attach DB]
-
-The csv filename is optional, with the default being the same as the db file
-(i.e., ~workfin~), with the extension ~.csv~, (i.e., ~workfin.csv~) in the
-~WORKCSV~ directory.  In order to facilitate matching an account to reconcile
-against, the ~--export~ option must be accompanied by the designation of a bank
-account, e.g., =6815= and a year, e.g., =2016=.  These will filter the data
-that is exported from the ~sqlite~ data file and will become the account to
-reconcile against.
-
-The export is accomplished by executing in a child process the command line
-program:
-
-: sqlite3 -header -csv db sql-statements
-
-The child process runs the {{{command(sqlite3)}}} command, and connects the
-=STDOUT= stream to the target CSV file.  Since the entire database contents for
-a given year and account are exported, the output will truncate the target CSV
-file upon opening it for writing.  The program will halt after the export.
-
-*** Export Code
-
-#+caption:CSV-SQLite3 Export Option
-#+name:csv-sqlite3-export-option
-#+begin_src js -n :tangle lib/sql/export.js
-  /* lib/sql/export.js */
-
-  const { spawnSync } = require('child_process');
-  const fs      = require('fs');
-  const path    = require('path');
-  const ENV     = require('../../config/env');
-  const {WORKCSV,WORKLEDGER} = ENV.WORKCSV;
-  const DB_DATA = require('./db_data');
-
-  /*--EXPORT--*/
-  //if (options.hasOwnProperty('export')) {
-
-  module.exports.export = function (options) {
-
-      const db_file = options.attach; //full path, e.g. WORKDB/workfin.sqlite
-      const export_csv = path.basename(db_file, '.sqlite'); //e.g. workfin
-
-      const export_csv_dir = WORKCSV;
-      if (!fs.existsSync(export_csv_dir)) {
-          fs.mkdirSync(export_csv_dir);
-          console.log(`Created ${export_csv_dir}`);
-      }
-      const export_csv_path = path.format({
-          dir: export_csv_dir,
-          name: export_csv,
-          ext: '.csv'
-      });
-
-      const [_acct, _year] = options.export;
-
-      if (!(Object.keys(DB_DATA.DB_ACCTS).includes(_acct) &&
-            DB_DATA.DB_YEARS.includes(_year))) {
-          console.error(`Invalid values for acct: ${_acct} or year: ${_year}`);
-          process.exit(1);
-      }
-
-      const usb_acct = `usb_${_acct}`;
-
-      //'as' - Open file for appending in synchronous mode. The file is created if it does not exist.
-      let fd = fs.openSync(export_csv_path,'as');
-      const size = fs.statSync(export_csv_path).size;
-      const header = size === 0 ? 'header' : 'noheader';
-      console.log(`export_csv_path: ${export_csv_path}`);
-
-      const sql = `
-  SELECT ${DB_DATA.EXPORT_DB_COLS.join(',')}
-  FROM   usb
-  WHERE  acct = '${usb_acct}' and date like '${_year}%';`;
-
-      console.log(`sql: ${sql}`);
-
-      let ret = spawnSync(
-          'sqlite3',
-          [
-              db_path,
-              '-csv',
-              `-${header}`,
-              sql,
-          ],
-          {
-              encoding: 'utf-8',
-              stdio: [0,fd,2]
-          }
-      );
-
-      if (ret.error) {
-          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`);
-          console.log(`error: ${ret.error}`);
-      }
-
-      console.log('done exporting');
-      fs.closeSync(fd);
-
-
-      /* CONVERT CSV TO LEDGER */
-      const ledger_dir = WORKLEDGER;
-      const ledger_path = path.format({
-          dir: ledger_dir,
-          name: export_csv,
-          ext: '.exported.ledger'
-      });
-      const zero_file = path.format({
-          dir: ledger_dir,
-          name: 'zero',
-          ext: '.ledger'
-      });
-      if (!fs.existsSync(ledger_dir)) {
-          fs.mkdirSync(ledger_dir);
-      }
-
-      const l_file = zero_file;
-      console.log(`converting: ${export_csv_path} to ledger_path: ${ledger_path}`);
-
-      fd = fs.openSync(ledger_path, 'as');	// 'as' - Open file for appending in synchronous mode.
-                                                  // The file is created if it does not exist.
-      ret = spawnSync(
-          'ledger',
-          [
-              'convert',
-              `${export_csv_path}`,
-              '--invert',
-              '--input-date-format=%Y-%m-%d',
-              `--account=Assets:${DB_ACCTS[_acct]}`,
-              '--rich-data',
-              `--file=${l_file}`,
-              `--now=${(new Date()).toISOString().split('T')[0]}`,
-          ],
-          {
-              encoding: 'utf-8',
-              stdio: [0,fd,2],
-          }
-      );
-
-      if (ret.error) {
-          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`);
-          console.log(`error: ${ret.error}`);
-      }
-
-      fs.closeSync(fd);
-      process.exit(0);
-  }
-#+end_src
-
-** Ledger ~convert~ Command
-
-#+cindex:@command{convert} command
-Upon an export of the SQLite3 data to a CSV file, the program will also send
-the exported data through the Ledger {{{command(convert)}}} command and into
-the ~workfin.ledger~ data file.[fn::Refer to the Ledger manual at Sec. 7.2.1.2
-for the {{{command(convert}}}} command.]  This file is located in the ~ledger/~
-directory below the ~workfin~ directory.
-
-#+cindex:directives, Ledger
-The {{{command(convert)}}} command uses a ~ledger~ file filled with ~ledger~
-=directives= to associate =payee= 's with =account= 's.  If this =directives=
-file does not exist, then it will be created.
-
-** The Zero Ledger File
-#+cindex:@command{convert} command
-#+cindex:opening entry
-#+cindex:accounts
-The Zero Ledger File is a ~ledger~ file with an opening balance, list of
-accounts, and directives that associate =payee= 's with =account= 's.  It is
-used by the ~ledger~ {{{command(convert)}}} command to prepare a ~ledger~ file,
-create initial set of accounts, and parse a CSV file into the ~ledger~ format.
-
-{{{heading(List of Accounts)}}}
-
-1. Expenses---where money goes
-
-2. Assets---where money sits
-
-3. Income---where money comes from
-
-4. Liabilities---where money is owed
-
-5. Equity---where value is
-
-
-Beneath theses top levels, there can be any level of detail required.
-
-{{{heading(Allowable Accounts)}}}
-
-Here are defined some allowable accounts:
-
-#+name:create-zero-file
-#+header: :mkdirp yes
-#+begin_src js :tangle ../../workfin/ledger/zero.ledger
-account Expenses
-account Assets
-account Income
-account Liabilities
-account Equity
-
-#+end_src
-
-Use the {{{option(--strict)}}} option to show incampatible accounts
-
-{{{heading(Opening Balances)}}}
-
-The first entry is a set of opening balances.  It will look like this:
-
-#+name:create-zero-file
-#+begin_src js
-2016/01/01 * Opening Balance
-    Expenses				$0
-	Assets:USB:Personal 6151		$0
-	Assets:USB:Business 6815		$0
-    Assets:USB:Trust 6831			$0
-    Assets:USB:Savings			$0
-    Income					$0
-    Liabilities				$0
-	Equity:Opening Balance
-
-#+end_src
-
-{{{heading(Directives and Subdirectives)}}}
-
-The Zero file uses two directives, each of which uses a sub-directive, of the
-form:
-
-#+begin_example
-payee <PAYEE>
-  alias </PAYEE_REGEX/>
-account <FULL:ACCOUNT>
-  payee </PAYEE_REGEX/>
-#+end_example
-
-#+cindex:directives
-#+cindex:@code{payee}
-#+cindex:@code{account}
-In the above, the first line rewrites the =payee= field to establish a
-legitimate payee.  The =alias= is a regex; anything that matches this directive
-will be turned into the associated =payee=.  The second line uses an account
-and a =payee= directive to specify the proper =account=.  Anything that matches
-the =payee= regex will be assigned the account.
-
-#+name:create-zero-file
-#+begin_src js
-payee USPS
- alias usps
-account Expenses:Office:Postage
- payee ^(USPS)$
-
-payee Staples
- alias staples
-payee Ikea
- alias ikea
-payee Portland Art Museum
- alias portland art
-payee The Energy Bar
- alias energy bar
-account Expenses:Office:Supplies
- payee ^(Staples|Portland Art Museum|Ikea|The Energy Bar)$
-
-payee City of Portland
- alias city of portland
-account Expenses:Business:Travel
- payee ^(City of Portland)$
-
-payee RingCentral
- alias ringcentral
-payee AT&T
- alias (at&?t)
-payee CenturyLink
- alias (centurylink|ctl)
-payee NameBright
- alias namebright
-account Expenses:Business:Communication
- payee ^(RingCentral|AT\&T|CenturyLink|NameBright)$
-
-payee AVVO
- alias avvo
-account Expenses:Business:Advertising
- payee AVVO
-
-payee National Law Foundation
- alias national law fou
-payee Coursera
- alias coursera
-payee EdX Inc.
- alias edx
-account Expenses:Professional:CLE
- payee ^(National Law Foundation|Coursera|EdX Inc.)$
-
-payee State Bar of CA
- alias state bar of ca
-account Expenses:Professional:License
- payee ^(State Bar of CA)$
-
-payee Costco Gas
- alias costco gas
-account Expenses:Office:Transportation
- payee ^(Costco Gas)$
-
-payee American Express
- alias amex
-payee Citi
- alias citi
-account CC:Payment
- payee ^(American Express|Citi)$
-
-payee Apple Store
- alias apple
-payee Radio Shack
- alias radioshack
-account Expenses:Office:Supplies
- payee ^(Apple Store|Radio Shack)$
-
-payee State Bar WA
- alias interest paid this period
-account Trust:LTAB
- payee State Bar WA
-
-payee State Bar WA
- alias ltab
-account Trust:LTAB
- payee State Bar WA
-
-account Assets:Personal
- payee usb_6151
-
-#+end_src
-
-{{{heading(An =include= File }}}
-
-Finally, include a file with an =Accounts:Payable= Category:
-
-#+name:create-zero-file
-#+begin_src js
-include accounts_payable.ledger
-#+end_src
-
-** The Accounts Payable File
-
-The ~accounts_payable.ledger~ file contains any outstanding accounts that
-should be included to make the inputted data correct, such as a set of
-outstanding invoices:
-
-#+name:accounts_payable-file
-#+begin_src js :tangle ../../workfin/ledger/accounts_payable.ledger
-  2016/01/18 * Clark County Indigent Defense ; Invoice No.s 092--099
-          Assets:Accounts Receivable	$1852.50
-          Income:120703			-$  82.50 ; Invoice No 092
-          Income:140707			-$ 525.00 ; Invoice No 093
-          Income:140709			-$ 397.50 ; Invoice No 094
-          Income:150701			-$  15.00 ; Invoice No 095
-          Income:150704			-$ 742.50 ; Invoice No 096
-          Income:150705			-$   7.50 ; Invoice No 097
-          Income:150706			-$   7.50 ; Invoice No 098
-          Income:150707			-$  75.00 ; Invoice No.099
-#+end_src
-
 * Process CSV Files using the Node.js Package ~csv~
 
 The Node.js package [[https://github.com/adaltas/node-csv][~node-csv~]] contains the following components (see
@@ -2063,158 +1552,519 @@ parser's ~write()~ method.
   }
   #+end_src
 
-* Node-SQLite3 Module
-:PROPERTIES:
-:appendix: true
-:END:
-Asynchronous, non-blocking SQLite3 bindings for Node.js.
+* Export SQLite DB Data to CSV File
+Once data has been downloaded from the bank's web site and imported into the
+sqlite3 database, it must be converted into a Ledger file.  This is
+accomplished using the {{{option(--export)}}} option.
 
-- [[https://github.com/mapbox/node-sqlite3][Github]]
+** =--export= Option
 
-- [[https://github.com/mapbox/node-sqlite3/wiki/API][Wiki API]]
+#+cindex:@option{--export} option
+To export the SQLite3 database data to CSV and Ledger files, use the
+{{{option(--export)}}} option:
 
-** Node-SQLite3 Module Usage
-#+name:node-sqlite3-module-sample-usage
-#+begin_src js -n
-var sqlite3 = require('sqlite3').verbose();
-var db = new sqlite3.Database(':memory:');
+: --export ACCT YEAR [--attach DB]
 
-db.serialize(function() {
-  db.run("CREATE TABLE lorem (info TEXT)");
+The csv filename is optional, with the default being the same as the db file
+(i.e., ~workfin~), with the extension ~.csv~, (i.e., ~workfin.csv~) in the
+~WORKCSV~ directory.  In order to facilitate matching an account to reconcile
+against, the ~--export~ option must be accompanied by the designation of a bank
+account, e.g., =6815= and a year, e.g., =2016=.  These will filter the data
+that is exported from the ~sqlite~ data file and will become the account to
+reconcile against.
 
-  var stmt = db.prepare("INSERT INTO lorem VALUES (?)");
-  for (var i = 0; i < 10; i++) {
-      stmt.run("Ipsum " + i);
+The export is accomplished by executing in a child process the command line
+program:
+
+: sqlite3 -header -csv db sql-statements
+
+The child process runs the {{{command(sqlite3)}}} command, and connects the
+=STDOUT= stream to the target CSV file.  Since the entire database contents for
+a given year and account are exported, the output will truncate the target CSV
+file upon opening it for writing.  The program will halt after the export.
+
+*** Export Code
+
+#+caption:CSV-SQLite3 Export Option
+#+name:csv-sqlite3-export-option
+#+begin_src js -n :tangle lib/sql/export.js
+  /* lib/sql/export.js */
+
+  const { spawnSync } = require('child_process');
+  const fs      = require('fs');
+  const path    = require('path');
+  const ENV     = require('../../config/env');
+  const {WORKCSV,WORKLEDGER} = ENV.WORKCSV;
+  const DB_DATA = require('./db_data');
+
+  /*--EXPORT--*/
+  //if (options.hasOwnProperty('export')) {
+
+  module.exports.export = function (options) {
+
+      const db_file = options.attach; //full path, e.g. WORKDB/workfin.sqlite
+      const export_csv = path.basename(db_file, '.sqlite'); //e.g. workfin
+
+      const export_csv_dir = WORKCSV;
+      if (!fs.existsSync(export_csv_dir)) {
+          fs.mkdirSync(export_csv_dir);
+          console.log(`Created ${export_csv_dir}`);
+      }
+      const export_csv_path = path.format({
+          dir: export_csv_dir,
+          name: export_csv,
+          ext: '.csv'
+      });
+
+      const [_acct, _year] = options.export;
+
+      if (!(Object.keys(DB_DATA.DB_ACCTS).includes(_acct) &&
+            DB_DATA.DB_YEARS.includes(_year))) {
+          console.error(`Invalid values for acct: ${_acct} or year: ${_year}`);
+          process.exit(1);
+      }
+
+      const usb_acct = `usb_${_acct}`;
+
+      //'as' - Open file for appending in synchronous mode. The file is created if it does not exist.
+      let fd = fs.openSync(export_csv_path,'as');
+      const size = fs.statSync(export_csv_path).size;
+      const header = size === 0 ? 'header' : 'noheader';
+      console.log(`export_csv_path: ${export_csv_path}`);
+
+      const sql = `
+  SELECT ${DB_DATA.EXPORT_DB_COLS.join(',')}
+  FROM   usb
+  WHERE  acct = '${usb_acct}' and date like '${_year}%';`;
+
+      console.log(`sql: ${sql}`);
+
+      let ret = spawnSync(
+          'sqlite3',
+          [
+              db_path,
+              '-csv',
+              `-${header}`,
+              sql,
+          ],
+          {
+              encoding: 'utf-8',
+              stdio: [0,fd,2]
+          }
+      );
+
+      if (ret.error) {
+          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`);
+          console.log(`error: ${ret.error}`);
+      }
+
+      console.log('done exporting');
+      fs.closeSync(fd);
+
+
+      /* CONVERT CSV TO LEDGER */
+      const ledger_dir = WORKLEDGER;
+      const ledger_path = path.format({
+          dir: ledger_dir,
+          name: export_csv,
+          ext: '.exported.ledger'
+      });
+      const zero_file = path.format({
+          dir: ledger_dir,
+          name: 'zero',
+          ext: '.ledger'
+      });
+      if (!fs.existsSync(ledger_dir)) {
+          fs.mkdirSync(ledger_dir);
+      }
+
+      const l_file = zero_file;
+      console.log(`converting: ${export_csv_path} to ledger_path: ${ledger_path}`);
+
+      fd = fs.openSync(ledger_path, 'as');	// 'as' - Open file for appending in synchronous mode.
+                                                  // The file is created if it does not exist.
+      ret = spawnSync(
+          'ledger',
+          [
+              'convert',
+              `${export_csv_path}`,
+              '--invert',
+              '--input-date-format=%Y-%m-%d',
+              `--account=Assets:${DB_ACCTS[_acct]}`,
+              '--rich-data',
+              `--file=${l_file}`,
+              `--now=${(new Date()).toISOString().split('T')[0]}`,
+          ],
+          {
+              encoding: 'utf-8',
+              stdio: [0,fd,2],
+          }
+      );
+
+      if (ret.error) {
+          console.log(`status: ${ret.status}\tsignal: ${ret.signal}`);
+          console.log(`error: ${ret.error}`);
+      }
+
+      fs.closeSync(fd);
+      process.exit(0);
   }
-  stmt.finalize();
-
-  db.each("SELECT rowid AS id, info FROM lorem", function(err, row) {
-      console.log(row.id + ": " + row.info);
-  });
-});
-
-db.close();
 #+end_src
 
-** Features
-- Straightforward query and parameter binding interface
-- Full Buffer/Blob support
-- Extensive debugging support
-  #+cindex:serialization
-- Query serialization API
-- Extension support
-- Big test suite
-- Written in modern C++ and tested for memory leaks
-- Bundles Sqlite3 3.26.0 as a fallback if the installing system doesn't include
-  SQLite
+** Ledger ~convert~ Command
 
-** Node-SQLite3 API
-#+cindex:serialization, function call
-~node-sqlite3~ has built-in /function call serialization/ and automatically waits
-before executing a blocking action until no other action is pending.  This
-means that it's safe to start calling functions on the database object even if
-it is not yet fully opened.  The ~Database#close()~ function will wait until
-all pending queries are completed before closing the database.
+#+cindex:@command{convert} command
+Upon an export of the SQLite3 data to a CSV file, the program will also send
+the exported data through the Ledger {{{command(convert)}}} command and into
+the ~workfin.ledger~ data file.[fn::Refer to the Ledger manual at Sec. 7.2.1.2
+for the {{{command(convert}}}} command.]  This file is located in the ~ledger/~
+directory below the ~workfin~ directory.
 
-** Node-SQLite3 Control Flow---Two Execution Modes
-#+cindex:execution flow
-#+cindex:parallel execution
-#+cindex:exclusive mode
-~node-sqlite3~ provides two functions to help control the execution flow of
-statements.  The default mode is to execute statements in /parallel/.  However,
-the ~Database#close~ method will always run in /exclusive mode/, meaning it
-waits until all previous queries have completed and ~node-sqlite3~ will not run
-any other queries while a ~close~ is pending.
+#+cindex:directives, Ledger
+The {{{command(convert)}}} command uses a ~ledger~ file filled with ~ledger~
+=directives= to associate =payee= 's with =account= 's.  If this =directives=
+file does not exist, then it will be created.
 
-*** Serialize Execution Mode
-#+cindex:execution mode, serialize
-#+cindex:serialize execution mode
-#+cindex:serialized mode
+** The Zero Ledger File
+#+cindex:@command{convert} command
+#+cindex:opening entry
+#+cindex:accounts
+The Zero Ledger File is a ~ledger~ file with an opening balance, list of
+accounts, and directives that associate =payee= 's with =account= 's.  It is
+used by the ~ledger~ {{{command(convert)}}} command to prepare a ~ledger~ file,
+create initial set of accounts, and parse a CSV file into the ~ledger~ format.
 
-#+attr_texinfo: :options Database serialize ( [callback] )
-#+begin_defmethod
-Puts the /execution mode/ into /serialized mode/.  This means that at most one
-statement object can execute a query at a time.  Other statements wait in a
-queue until the previous statements are executed.
+{{{heading(List of Accounts)}}}
 
-If a callback is provided, it will be called immediately.  All database queries
-scheduled in that callback will be serialized.  After the function returns, the
-database is set back to its original mode again.
-#+end_defmethod
+1. Expenses---where money goes
 
-Calling ~Database#serialize()~ within nested functions is safe:
+2. Assets---where money sits
 
-#+name:node-sqlite-3-serialized-mode-example
-#+begin_src js -n
-  // Queries scheduled here will run in parallel.
+3. Income---where money comes from
 
-  db.serialize(function() {
+4. Liabilities---where money is owed
 
-      // Queries scheduled here will be serialized.
-      db.serialize(function() {
-          // Queries scheduled here will still be serialized.
-      });
-      // Queries scheduled here will still be serialized.
-  });
+5. Equity---where value is
 
-  // Queries scheduled here will run in parallel again.
+
+Beneath theses top levels, there can be any level of detail required.
+
+{{{heading(Allowable Accounts)}}}
+
+Here are defined some allowable accounts:
+
+#+name:create-zero-file
+#+header: :mkdirp yes
+#+begin_src js :tangle ../../workfin/ledger/zero.ledger
+account Expenses
+account Assets
+account Income
+account Liabilities
+account Equity
 
 #+end_src
 
-Note that queries scheduled not directly in the callback function are not
-necessarily serialized:
+Use the {{{option(--strict)}}} option to show incampatible accounts
 
-#+begin_src js -n
-  db.serialize(function() {
+{{{heading(Opening Balances)}}}
 
-      // These two queries will run sequentially.
-      db.run("CREATE TABLE foo (num)");
-      db.run("INSERT INTO foo VALUES (?)", 1, function() {
+The first entry is a set of opening balances.  It will look like this:
 
-          // These queries will run in parallel and the second query will probably
-          // fail because the table might not exist yet.
-          db.run("CREATE TABLE bar (num)");
-          db.run("INSERT INTO bar VALUES (?)", 1);
-      });
-  });
+#+name:create-zero-file
+#+begin_src js
+2016/01/01 * Opening Balance
+    Expenses				$0
+	Assets:USB:Personal 6151		$0
+	Assets:USB:Business 6815		$0
+    Assets:USB:Trust 6831			$0
+    Assets:USB:Savings			$0
+    Income					$0
+    Liabilities				$0
+	Equity:Opening Balance
+
 #+end_src
 
-#+cindex:sticky execution mode
-#+cindex:execution mode, sticky
-If you call it without a function parameter, the execution mode setting is
-sticky and won't change until the next call to ~Database#parallelize~.
+{{{heading(Directives and Subdirectives)}}}
 
-*** Parallelize Execution Mode
-#+cindex:parallized exeuction mode
-#+cindex:execution mode, parallelized
+The Zero file uses two directives, each of which uses a sub-directive, of the
+form:
 
-#+attr_texinfo: :options Database parallelize ( [callback] )
-#+begin_defmethod
-Puts the execution mode into parallelized.  This means that queries scheduled
-will be run in parallel.
+#+begin_example
+payee <PAYEE>
+  alias </PAYEE_REGEX/>
+account <FULL:ACCOUNT>
+  payee </PAYEE_REGEX/>
+#+end_example
 
-If a callback is provided, it will be called immediately.  All database queries
-scheduled in that callback will run parallelized.  After the function returns,
-the database is set back to its original mode again.
-#+end_defmethod
+#+cindex:directives
+#+cindex:@code{payee}
+#+cindex:@code{account}
+In the above, the first line rewrites the =payee= field to establish a
+legitimate payee.  The =alias= is a regex; anything that matches this directive
+will be turned into the associated =payee=.  The second line uses an account
+and a =payee= directive to specify the proper =account=.  Anything that matches
+the =payee= regex will be assigned the account.
 
-Calling ~Database#parallelize()~ within nested functions is safe:
+#+name:create-zero-file
+#+begin_src js
+payee USPS
+ alias usps
+account Expenses:Office:Postage
+ payee ^(USPS)$
 
-#+begin_src js -n
-  db.serialize(function() {
+payee Staples
+ alias staples
+payee Ikea
+ alias ikea
+payee Portland Art Museum
+ alias portland art
+payee The Energy Bar
+ alias energy bar
+account Expenses:Office:Supplies
+ payee ^(Staples|Portland Art Museum|Ikea|The Energy Bar)$
 
-      // Queries scheduled here will be serialized.
-      db.parallelize(function() {
+payee City of Portland
+ alias city of portland
+account Expenses:Business:Travel
+ payee ^(City of Portland)$
 
-          // Queries scheduled here will run in parallel.
-      });
+payee RingCentral
+ alias ringcentral
+payee AT&T
+ alias (at&?t)
+payee CenturyLink
+ alias (centurylink|ctl)
+payee NameBright
+ alias namebright
+account Expenses:Business:Communication
+ payee ^(RingCentral|AT\&T|CenturyLink|NameBright)$
 
-      // Queries scheduled here will be serialized again.
-  });
+payee AVVO
+ alias avvo
+account Expenses:Business:Advertising
+ payee AVVO
+
+payee National Law Foundation
+ alias national law fou
+payee Coursera
+ alias coursera
+payee EdX Inc.
+ alias edx
+account Expenses:Professional:CLE
+ payee ^(National Law Foundation|Coursera|EdX Inc.)$
+
+payee State Bar of CA
+ alias state bar of ca
+account Expenses:Professional:License
+ payee ^(State Bar of CA)$
+
+payee Costco Gas
+ alias costco gas
+account Expenses:Office:Transportation
+ payee ^(Costco Gas)$
+
+payee American Express
+ alias amex
+payee Citi
+ alias citi
+account CC:Payment
+ payee ^(American Express|Citi)$
+
+payee Apple Store
+ alias apple
+payee Radio Shack
+ alias radioshack
+account Expenses:Office:Supplies
+ payee ^(Apple Store|Radio Shack)$
+
+payee State Bar WA
+ alias interest paid this period
+account Trust:LTAB
+ payee State Bar WA
+
+payee State Bar WA
+ alias ltab
+account Trust:LTAB
+ payee State Bar WA
+
+account Assets:Personal
+ payee usb_6151
+
 #+end_src
 
-If you call it without a function parameter, the execution mode setting is
-sticky and won't change until the next call to ~Database#serialize~.
+{{{heading(An =include= File }}}
+
+Finally, include a file with an =Accounts:Payable= Category:
+
+#+name:create-zero-file
+#+begin_src js
+include accounts_payable.ledger
+#+end_src
+
+** The Accounts Payable File
+
+The ~accounts_payable.ledger~ file contains any outstanding accounts that
+should be included to make the inputted data correct, such as a set of
+outstanding invoices:
+
+#+name:accounts_payable-file
+#+begin_src js :tangle ../../workfin/ledger/accounts_payable.ledger
+  2016/01/18 * Clark County Indigent Defense ; Invoice No.s 092--099
+          Assets:Accounts Receivable	$1852.50
+          Income:120703			-$  82.50 ; Invoice No 092
+          Income:140707			-$ 525.00 ; Invoice No 093
+          Income:140709			-$ 397.50 ; Invoice No 094
+          Income:150701			-$  15.00 ; Invoice No 095
+          Income:150704			-$ 742.50 ; Invoice No 096
+          Income:150705			-$   7.50 ; Invoice No 097
+          Income:150706			-$   7.50 ; Invoice No 098
+          Income:150707			-$  75.00 ; Invoice No.099
+#+end_src
+
+* Find and Store Checks
+:PROPERTIES:
+:appendix: t
+:END:
+
+After the Sqlite3 database is exported and converted by Ledger, there are
+numerous individual entries that need to be converted but for which there is no
+real data available to help.  An example would be checks.  The check
+information is located in the worklog, so one solution is to parse the worklog
+to obtain check information, then parse the Ledger file to update it.
+
+I created a package called =wlparser= that can be used to find particular
+elements in the ~worklog.<year>.otl~ files.  Among other things, this package
+is set up to find and return all checks for a particular year.  At this point,
+the ~findChecks~ program requires an argument for a =<year>=, and will then
+gather all checks and place them into the SQLite3 database in a table called
+=checks=.  It can be run any number of times for any yeaer and will not add
+duplicate entries.
+
+When this ~csv-sqlite3~ program converts the CSV files into the =ledger=
+format, it can do a search for a particular check number in this SQLite3
+=checks= table and incorporate that data into the ledger file.
+
+Use the commandline program ~find-checks <year>~ to find and store checks from
+the worklog yearly file identified by =<year>= option (i.e.,
+~worklog.<year>.otl~) and save it into the SQLite3 database =<db>= in a table
+called =checks=.
+
+#+caption:The =find-checks= script file
+#+name:find-checks-script-file
+#+header: :mkdirp yes :noweb yes
+#+header: :shebang "#!/usr/bin/env node"
+#+begin_src js -n :tangle scripts/find-checks.js
+  /* find-checks.js */
+
+  /* USAGE:
+   ,* find-checks <year> [db]
+   ,*/
+
+  const DEFAULT_DB = 'workfin';
+  const TABLE      = 'checks';
+  const EXT        = '.sqlite';
+
+  // make sure WORKDB is defined
+  if (typeof process.env.WORKDB === 'undefined') {
+    console.error('Must defined environment variable for WORKDB');
+    process.exit(1);
+  }
+  const WORKDB = process.env.WORKDB;
+
+  // make sure a <year> argument is included
+  if (process.argv.length < 3) {
+    console.error('Must include a <year> argument: "find-checks <year>"');
+    process.exit(1);
+  }
+
+  // make sure the <year> argument is a number
+  const wlyear = parseInt(process.argv[2],10);
+  if (isNaN(wlyear)) {
+    console.error(`The <year> argument: "${process.argv[2]}" must be a year, e.g., "2016"`);
+    process.exit(1);
+  }
+
+  // second optional argument is the name of the database, without extension
+  // if no second argument, use default db of $WORKDB/workfin.sqlite
+  const path   = require('path');
+  const db_path = path.format({
+    dir: WORKDB,
+    name: `${process.argv[3] || DEFAULT_DB}`,
+    ext: EXT
+  });
+
+  // Everything is a go; load the wlparser, wlchecks, sqlite3 modules
+  const {WLChecks}   = require('wlparser');
+  const wlchecks     = new WLChecks(wlyear);
+  const sqlite3      = require('sqlite3').verbose(); // remove verbose() for production code
+  const {CHECK_COLS} = require('../lib/sql/definitions');
+
+  let statement;
+
+  // Load the sqlite3 database
+  const db = new sqlite3.Database(db_path, err => {
+    if (err) {
+      console.error(`Database Error: ${err}`);
+      process.exit(1);
+    }
+    console.log(`Successfully opened database at ${db_path}`);
+  });
+
+  db.serialize();
+
+  statement = `CREATE TABLE IF NOT EXISTS
+  <<define-checks-table-schema>>`;
+  db.run(statement);
+
+  let cols = CHECKS_COLS.join(','); // create string of column names for INSERT statement
+  let values = CHECKS_COLS.map(col => `$${col}`).join(', '); // create string of placeholders for INSERT statement
+  statement = `INSERT INTO ${TABLE} (${cols}) VALUES (${values})`;
+
+  let all_checks = []; // used to filter out already-entered checks
+
+  wlchecks.on('check', data => {
+    delete data.type; // simply don't need this property
+    if (!all_checks.includes(data.checkno)) { // filter out already-entered checks
+        const new_data = {};
+        for (k in data) { // create the named parameters of form 'new_data = {$checkno: 1234}'
+            new_data[`$${k}`] = data[k];
+        }
+        db.run(statement, new_data, (err) => { // add the check data to the sqlite database
+            if (err) console.error(`ERROR: ${err}`);
+        });
+    };
+
+  }).on('checked', () => {
+    db.close();
+
+  }).on('error', err => {
+    process.exit(1);
+
+  });
+
+  // load all of the previously-entered checks into the array 'all_checks'
+  db.all(`SELECT checkno FROM ${TABLE} WHERE date LIKE '${wlyear}%'`, [], (err, check_data) => {
+      if (check_data) {
+          all_checks = check_data.map(row => row.checkno);
+      }
+
+      wlchecks.findChecks(); // start the stream running
+  });
+
+#+end_src
+
+#+RESULTS: find-checks-script-file
+
+{{{heading(Create Symbolic Link into WORKBIN)}}}
+
+This code creates a symbolic link into the =WORKBIN= directory for the command
+line program =find-checks= so that it can be run as a script.  Note that the
+link must be symbolic in order for the ~node_modules/wlparser/lib/*~ files to
+be found when ~find-checks~ is run from the =WORKBIN= directory.
+
+#+begin_src sh :results output :exports both :dir scripts
+ln -sf $PWD/find-checks.js $WORKBIN/find-checks
+#+end_src
 
 * Converting CSV Files
 :PROPERTIES:
@@ -2433,6 +2283,9 @@ match on the new =payee= field.  During the {{{command(ledger convert)}}} run,
 only the original =payee= name as specified in the csv data seems to be used.
 
 * Update package.json Version
+:PROPERTIES:
+:appendix: t
+:END:
 In order to keep the ~package.json~ =version= number,
 [[create-CSV-SQLite3-package][Create the CSV-SQLite3 Package]], in sync with this document's version number, I have
 created a little script to update its version based upon the macro =version='s
@@ -2476,6 +2329,159 @@ s/\n//
 s/^([[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+)(.*)([[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+)/\2\1/
 ' CSV-SQLite3.org
 #+end_src
+
+* Node-SQLite3 Module
+:PROPERTIES:
+:appendix: true
+:END:
+Asynchronous, non-blocking SQLite3 bindings for Node.js.
+
+- [[https://github.com/mapbox/node-sqlite3][Github]]
+
+- [[https://github.com/mapbox/node-sqlite3/wiki/API][Wiki API]]
+
+** Node-SQLite3 Module Usage
+#+name:node-sqlite3-module-sample-usage
+#+begin_src js -n
+var sqlite3 = require('sqlite3').verbose();
+var db = new sqlite3.Database(':memory:');
+
+db.serialize(function() {
+  db.run("CREATE TABLE lorem (info TEXT)");
+
+  var stmt = db.prepare("INSERT INTO lorem VALUES (?)");
+  for (var i = 0; i < 10; i++) {
+      stmt.run("Ipsum " + i);
+  }
+  stmt.finalize();
+
+  db.each("SELECT rowid AS id, info FROM lorem", function(err, row) {
+      console.log(row.id + ": " + row.info);
+  });
+});
+
+db.close();
+#+end_src
+
+** Features
+- Straightforward query and parameter binding interface
+- Full Buffer/Blob support
+- Extensive debugging support
+  #+cindex:serialization
+- Query serialization API
+- Extension support
+- Big test suite
+- Written in modern C++ and tested for memory leaks
+- Bundles Sqlite3 3.26.0 as a fallback if the installing system doesn't include
+  SQLite
+
+** Node-SQLite3 API
+#+cindex:serialization, function call
+~node-sqlite3~ has built-in /function call serialization/ and automatically waits
+before executing a blocking action until no other action is pending.  This
+means that it's safe to start calling functions on the database object even if
+it is not yet fully opened.  The ~Database#close()~ function will wait until
+all pending queries are completed before closing the database.
+
+** Node-SQLite3 Control Flow---Two Execution Modes
+#+cindex:execution flow
+#+cindex:parallel execution
+#+cindex:exclusive mode
+~node-sqlite3~ provides two functions to help control the execution flow of
+statements.  The default mode is to execute statements in /parallel/.  However,
+the ~Database#close~ method will always run in /exclusive mode/, meaning it
+waits until all previous queries have completed and ~node-sqlite3~ will not run
+any other queries while a ~close~ is pending.
+
+*** Serialize Execution Mode
+#+cindex:execution mode, serialize
+#+cindex:serialize execution mode
+#+cindex:serialized mode
+
+#+attr_texinfo: :options Database serialize ( [callback] )
+#+begin_defmethod
+Puts the /execution mode/ into /serialized mode/.  This means that at most one
+statement object can execute a query at a time.  Other statements wait in a
+queue until the previous statements are executed.
+
+If a callback is provided, it will be called immediately.  All database queries
+scheduled in that callback will be serialized.  After the function returns, the
+database is set back to its original mode again.
+#+end_defmethod
+
+Calling ~Database#serialize()~ within nested functions is safe:
+
+#+name:node-sqlite-3-serialized-mode-example
+#+begin_src js -n
+  // Queries scheduled here will run in parallel.
+
+  db.serialize(function() {
+
+      // Queries scheduled here will be serialized.
+      db.serialize(function() {
+          // Queries scheduled here will still be serialized.
+      });
+      // Queries scheduled here will still be serialized.
+  });
+
+  // Queries scheduled here will run in parallel again.
+
+#+end_src
+
+Note that queries scheduled not directly in the callback function are not
+necessarily serialized:
+
+#+begin_src js -n
+  db.serialize(function() {
+
+      // These two queries will run sequentially.
+      db.run("CREATE TABLE foo (num)");
+      db.run("INSERT INTO foo VALUES (?)", 1, function() {
+
+          // These queries will run in parallel and the second query will probably
+          // fail because the table might not exist yet.
+          db.run("CREATE TABLE bar (num)");
+          db.run("INSERT INTO bar VALUES (?)", 1);
+      });
+  });
+#+end_src
+
+#+cindex:sticky execution mode
+#+cindex:execution mode, sticky
+If you call it without a function parameter, the execution mode setting is
+sticky and won't change until the next call to ~Database#parallelize~.
+
+*** Parallelize Execution Mode
+#+cindex:parallized exeuction mode
+#+cindex:execution mode, parallelized
+
+#+attr_texinfo: :options Database parallelize ( [callback] )
+#+begin_defmethod
+Puts the execution mode into parallelized.  This means that queries scheduled
+will be run in parallel.
+
+If a callback is provided, it will be called immediately.  All database queries
+scheduled in that callback will run parallelized.  After the function returns,
+the database is set back to its original mode again.
+#+end_defmethod
+
+Calling ~Database#parallelize()~ within nested functions is safe:
+
+#+begin_src js -n
+  db.serialize(function() {
+
+      // Queries scheduled here will be serialized.
+      db.parallelize(function() {
+
+          // Queries scheduled here will run in parallel.
+      });
+
+      // Queries scheduled here will be serialized again.
+  });
+#+end_src
+
+If you call it without a function parameter, the execution mode setting is
+sticky and won't change until the next call to ~Database#serialize~.
 
 * Makefile
 #+name:Makefile
